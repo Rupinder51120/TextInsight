@@ -124,7 +124,11 @@ Streamlit is reachable at `http://localhost:8501`; it talks to the FastAPI backe
 docker compose up --build
 ```
 
-Streamlit is reachable at `http://localhost:8501` either way.
+Streamlit is still reachable at `http://localhost:8501`, but the backend's *host*-side port is `8080`, not
+`8000` (`http://localhost:8080`) — deliberately different from the local-run default, since 8000 is a
+common port other local services may already be using. This only affects how you reach the backend from
+outside Docker (e.g. `curl`); the frontend container talks to the backend container internally and needs no
+adjustment.
 
 **Walkthrough:** upload a CSV/TXT/PDF in the sidebar (you'll see a profiling summary once it's processed),
 then ask a question in the chat box. The workflow panel shows which tools ran and in what order; the
