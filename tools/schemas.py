@@ -8,7 +8,7 @@ called outside the agent graph — docs/LATENCY_AND_PERFORMANCE.md §3 requires 
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ---------------------------------------------------------------------------
@@ -158,3 +158,21 @@ class FilterDocumentsOutput(BaseModel):
     document_ids: list[str]
     count: int
     latency_ms: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# model_recommendation — shared rule-engine types (docs/MODEL_RECOMMENDATION.md §2-3)
+# ---------------------------------------------------------------------------
+
+
+class UserConstraints(BaseModel):
+    latency_requirement: str | None = None  # e.g. "fast", "real-time"; None = unspecified
+    compute_constraints: str | None = None  # e.g. "cpu_only", "gpu_available"; None = default cpu_only
+
+
+class CandidateModel(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())  # "model_name" is the doc-specified field name
+
+    model_name: str
+    is_default: bool
+    reason: str
