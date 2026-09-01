@@ -204,3 +204,27 @@ class EvaluateCandidatesOutput(BaseModel):
     skipped: bool
     skip_reason: str | None = None
     latency_ms: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# research_models — docs/TOOLS_AND_MODELS.md #10b
+# ---------------------------------------------------------------------------
+
+
+class ResearchModelsInput(BaseModel):
+    task_type: str
+    candidate_models: list[str] = Field(default_factory=list)
+    topic: str | None = None
+
+
+class ResearchEvidence(BaseModel):
+    claim: str
+    source_title: str
+    source_url: str
+    snippet: str
+
+
+class ResearchModelsOutput(BaseModel):
+    evidence: list[ResearchEvidence]
+    found: bool
+    latency_ms: float = 0.0
