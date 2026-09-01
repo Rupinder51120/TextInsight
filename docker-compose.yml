@@ -1,0 +1,41 @@
+# docs/TECH_STACK.md "Deployment: Docker + Docker Compose" — exactly two services (backend + frontend),
+# no database/cache container (per docs/CLAUDE.md §3.5: intentionally none exist in this project's design).
+# `.env` is read at compose-up time, never baked into either image.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Named volume for the HF model cache so weights aren't re-downloaded on every container rebuild
+      # (docs/TECH_STACK.md).
+      - hf-cache:/root/.cache/huggingface
+    networks:
+      - textinsight
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    networks:
+      - textinsight
+
+volumes:
+  hf-cache:
+
+networks:
+  textinsight:
+    driver: bridge
