@@ -1,0 +1,6 @@
+TextInsight is an agentic NLP platform that lets a user upload a CSV, TXT, or PDF file and ask a
+natural-language question about it. The system routes the question to the right pretrained NLP tool,
+chains multiple tools together when a diagnostic question requires it, and can also give a dataset-aware
+model recommendation with evidence clearly separated from external research and system judgment. Nothing
+in this codebase performs model training or fine-tuning; every NLP result comes from a pretrained
+Hugging Face pipeline run at inference time.
