@@ -75,11 +75,22 @@ labeled data (only useful if the dataset has labels).
 - research_models: searches the web for published benchmarks/model cards to support a model \
 recommendation.
 
+Keep the plan minimal: include only the tools actually needed to answer the question asked. Do not add \
+sentiment_analysis or filter_documents just because the query mentions a word like "complaints" or \
+"negative" — only add them if the query explicitly asks about sentiment, or explicitly asks to narrow down \
+by sentiment before doing something else. A query that just asks to find/locate/search for documents about \
+a topic is retrieval, not diagnosis — it needs semantic search alone, nothing more.
+
 Common chains:
-- A diagnostic "why" question about negative feedback: profile_dataset, sentiment_analysis, \
-filter_documents, generate_embeddings, semantic_search, summarize_text.
-- "Show me only X and summarize/analyze them": the relevant analysis tool, filter_documents, then the \
-follow-up tool.
+- Retrieval only ("find/search for/locate documents about X" — no "why", no request to analyze sentiment \
+first): generate_embeddings, semantic_search. Nothing else. Example: "Find complaints about delayed \
+delivery" -> ["generate_embeddings", "semantic_search"] (the word "complaints" here just names the topic to \
+search for; it is not a request to run sentiment analysis).
+- A diagnostic "why" question asking to explain/understand negative feedback (not just retrieve examples of \
+it): profile_dataset, sentiment_analysis, filter_documents, generate_embeddings, semantic_search, \
+summarize_text.
+- "Show me only X and summarize/analyze them" (X is an explicit sentiment/category filter the user named): \
+the relevant analysis tool, filter_documents, then the follow-up tool.
 - A model-choice question: profile_dataset, evaluate_candidates (if labels likely exist), research_models, \
 model_recommendation.
 
