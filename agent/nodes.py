@@ -37,20 +37,23 @@ from agent.timing import timed
 from ingestion.store import corpus_store
 from llm.client import GroqLLMClient, LLMError
 from tools import (
+    evaluate_candidates,
     filter_documents,
     generate_embeddings,
+    model_recommendation,
     profile_dataset,
+    research_models,
     semantic_search,
     sentiment_analysis,
     summarize_text,
     text_classification,
 )
+from tools.model_recommendation import generate_candidates
 
-# Full documented catalog (docs/TOOLS_AND_MODELS.md #1-10b), including tools not yet wired into
-# _TOOL_FUNCTIONS below (named_entity_recognition, model_recommendation, evaluate_candidates,
-# research_models — SHOULD-HAVE/Day-4 items). The LLM is told about the *complete* capability set so
-# routing/planning can be evaluated against it now; execute_tool below only actually knows how to run the
-# subset that exists as of Day 3, and gracefully replans around the rest (see module docstring).
+# Full documented catalog (docs/TOOLS_AND_MODELS.md #1-10b). named_entity_recognition is the one tool not
+# wired into _TOOL_FUNCTIONS below (SHOULD-HAVE, deprioritized per PROJECT_SPEC.md §11) — the LLM is still
+# told about it so routing/planning can be evaluated against the full catalog; a plan that includes it
+# gracefully replans it away (see module docstring) rather than failing the turn.
 _TOOL_CATALOG_PROMPT = """You are the planning component of TextInsight, an NLP analysis agent. Given a \
 user's natural-language question about their uploaded dataset, decide which tool(s) to run, in order, to \
 answer it.
@@ -120,7 +123,16 @@ _TOOL_FUNCTIONS = {
     "generate_embeddings": generate_embeddings,
     "semantic_search": semantic_search,
     "filter_documents": filter_documents,
+    "evaluate_candidates": evaluate_candidates,
+    "research_models": research_models,
+    "model_recommendation": model_recommendation,
 }
+
+# evaluate_candidates (tools/evaluate_candidates.py) always scores candidates through the
+# sentiment-analysis HF pipeline internally — it has no task_type parameter — so "sentiment" is the only
+# task_type for which a model-recommendation workflow can produce a real, honestly-scoreable shortlist
+# end-to-end today. Documented as a known limitation (README.md), not silently glossed over.
+_MODEL_RECOMMENDATION_TASK_TYPE = "sentiment"
 
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 _LABEL_SPLIT_RE = re.compile(r"[,/]| or ")
@@ -216,6 +228,31 @@ def _build_kwargs(tool_name: str, state: AgentState) -> dict[str, Any]:
                 "source_result": results["semantic_search"],
             }
         raise ValueError("filter_documents has no prior sentiment_analysis or semantic_search result yet")
+
+    if tool_name == "evaluate_candidates":
+        candidates = generate_candidates(_MODEL_RECOMMENDATION_TASK_TYPE)
+        return {
+            "corpus_ref": corpus_ref,
+            "profile": profile or {},
+            "candidate_models": [c.model_name for c in candidates],
+        }
+
+    if tool_name == "research_models":
+        candidates = generate_candidates(_MODEL_RECOMMENDATION_TASK_TYPE)
+        return {
+            "task_type": _MODEL_RECOMMENDATION_TASK_TYPE,
+            "candidate_models": [c.model_name for c in candidates],
+        }
+
+    if tool_name == "model_recommendation":
+        research_result = results.get("research_models")
+        return {
+            "profile": profile or {},
+            "task_type": _MODEL_RECOMMENDATION_TASK_TYPE,
+            "research_evidence": research_result.evidence if (research_result and research_result.found) else None,
+            "research_attempted": research_result is not None,
+            "evaluation_result": results.get("evaluate_candidates"),
+        }
 
     raise ValueError(f"'{tool_name}' is not available yet")
 

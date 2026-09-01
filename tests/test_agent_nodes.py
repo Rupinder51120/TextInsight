@@ -142,11 +142,13 @@ class TestExecuteTool:
         assert not result["error"].startswith("'sentiment_analysis' failed: REPLAN")
 
     def test_unavailable_tool_name_triggers_replan(self):
-        state = _state(plan=["model_recommendation"], step_index=0)
+        # named_entity_recognition is the one catalog tool deliberately not wired into execute_tool
+        # (SHOULD-HAVE, deprioritized per PROJECT_SPEC.md §11) — a genuine "not available" case.
+        state = _state(plan=["named_entity_recognition"], step_index=0)
 
         result = nodes.execute_tool(state)
 
-        assert result["error"] == "REPLAN:model_recommendation:'model_recommendation' is not available yet"
+        assert result["error"] == "REPLAN:named_entity_recognition:'named_entity_recognition' is not available yet"
 
 
 class TestRouteNext:
