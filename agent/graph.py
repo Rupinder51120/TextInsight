@@ -51,7 +51,14 @@ def run_agent(
     corpus_ref: str,
     user_query: str,
     chat_history: list[dict] | None = None,
+    profile: dict | None = None,
 ) -> AgentState:
     app = build_graph()
-    state = new_state(session_id=session_id, corpus_ref=corpus_ref, user_query=user_query, chat_history=chat_history)
+    state = new_state(
+        session_id=session_id,
+        corpus_ref=corpus_ref,
+        user_query=user_query,
+        chat_history=chat_history,
+        profile=profile,
+    )
     return app.invoke(state)

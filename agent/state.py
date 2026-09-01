@@ -22,14 +22,26 @@ class AgentState(TypedDict):
     error: str | None
 
 
-def new_state(session_id: str, corpus_ref: str, user_query: str, chat_history: list[dict] | None = None) -> AgentState:
-    """Construct a fresh AgentState for one turn. The only place default field values are decided."""
+def new_state(
+    session_id: str,
+    corpus_ref: str,
+    user_query: str,
+    chat_history: list[dict] | None = None,
+    profile: dict | None = None,
+) -> AgentState:
+    """Construct a fresh AgentState for one turn. The only place default field values are decided.
+
+    `profile` seeds a cached profile_dataset result from a prior turn in the same session (per
+    docs/DATA_FLOW.md §3) — plan_steps (agent/nodes.py) already skips re-running profile_dataset whenever
+    state["profile"] is populated, so passing it in here is what makes that cache-reuse actually span
+    separate backend requests, not just steps within one graph run.
+    """
     return AgentState(
         session_id=session_id,
         corpus_ref=corpus_ref,
         chat_history=chat_history or [],
         user_query=user_query,
-        profile=None,
+        profile=profile,
         plan=[],
         step_index=0,
         tool_results={},
