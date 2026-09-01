@@ -49,6 +49,14 @@ class GroqLLMClient(LLMClient):
             model=model or settings.groq_model,
             api_key=settings.groq_api_key,
             timeout=settings.llm_timeout_seconds,
+            # The underlying groq SDK defaults to its OWN max_retries=2, independent of and invisible to
+            # complete()'s retry loop below — and on a 429 it sleeps for Groq's exact stated Retry-After
+            # value (up to 60s) per attempt, not our exponential backoff. Left at its default, a single
+            # complete() call could silently block for minutes (3 outer attempts x up to 2 inner SDK
+            # retries x up to 60s), which directly undermines the bounded-retry, fail-fast-to-degraded-mode
+            # policy this class exists to implement (docs/SECURITY_AND_RELIABILITY.md §6-7). Disabling it
+            # here makes complete()'s own loop the single, predictable source of retry behavior.
+            max_retries=0,
         )
         if bound_tools:
             self._chat = self._chat.bind_tools(bound_tools)
