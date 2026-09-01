@@ -228,3 +228,46 @@ class ResearchModelsOutput(BaseModel):
     evidence: list[ResearchEvidence]
     found: bool
     latency_ms: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# model_recommendation — docs/TOOLS_AND_MODELS.md #9, docs/MODEL_RECOMMENDATION.md §7
+# ---------------------------------------------------------------------------
+
+
+class ModelRecommendationInput(BaseModel):
+    """Public contract per docs/TOOLS_AND_MODELS.md #9. The actual Python function additionally takes
+    `evaluation_result` (evaluate_candidates' real output, when it ran) — not in the doc's literal Input
+    list, but required to make §6.5/§7's "Section A must contain real numbers" guarantee possible; same
+    internal-plumbing precedent as filter_documents' `source_result` (see tools/filter_documents.py)."""
+
+    profile: dict[str, Any]
+    task_type: str
+    user_constraints: UserConstraints | None = None
+    research_evidence: list[ResearchEvidence] | None = None
+    # research_evidence=None is ambiguous on its own between "never requested" and "requested but the
+    # search API returned found: false" (docs/AGENT_WORKFLOWS.md §8: both must produce a DIFFERENT final
+    # message, "never silently drops the fact that research was requested"). This disambiguates them —
+    # also internal-plumbing, beyond the doc's literal Input list, same precedent as `evaluation_result`.
+    research_attempted: bool = False
+
+
+class ModelRecommendationOutput(BaseModel):
+    recommendation: str
+    rationale: list[str]
+
+    # Section A — docs/MODEL_RECOMMENDATION.md §7
+    measured_on_user_data: list[CandidateEvaluation]
+    measured_skip_reason: str | None = None
+
+    # Section B
+    external_research: list[ResearchEvidence]
+    research_note: str | None = None
+
+    # Section C
+    system_judgment: str
+
+    confidence_note: str
+    fine_tune_note: str  # docs/MODEL_RECOMMENDATION.md §9's always-present disclaimer sentence
+    degraded: bool = False  # true when the LLM call failed and this is the rule-based-only fallback
+    latency_ms: float = 0.0

@@ -1,6 +1,7 @@
 from tools.evaluate_candidates import evaluate_candidates
 from tools.filter_documents import filter_documents
 from tools.generate_embeddings import generate_embeddings
+from tools.model_recommendation import model_recommendation
 from tools.profile_dataset import profile_dataset
 from tools.research_models import research_models
 from tools.semantic_search import semantic_search
@@ -18,4 +19,5 @@ __all__ = [
     "filter_documents",
     "evaluate_candidates",
     "research_models",
+    "model_recommendation",
 ]

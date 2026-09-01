@@ -9,9 +9,20 @@ This module is built in two independent layers:
    once (1) and evaluate_candidates are solid.
 """
 
+import json
+import re
 from typing import Any
 
-from tools.schemas import CandidateModel, UserConstraints
+from llm.client import GroqLLMClient, LLMError
+from tools.schemas import (
+    CandidateEvaluation,
+    CandidateModel,
+    EvaluateCandidatesOutput,
+    ModelRecommendationOutput,
+    ResearchEvidence,
+    UserConstraints,
+)
+from tools.timing import timed_tool
 
 # Per-task shortlist: (model_name, is_default). The default entry in every task is already the
 # smaller/distilled model per docs/TOOLS_AND_MODELS.md's own "Default Pretrained Model Choices" table, so
@@ -117,3 +128,188 @@ def fine_tune_advisory_note(profile: dict[str, Any], best_measured_accuracy: flo
         )
 
     return f"{framing} {_FINE_TUNE_DISCLAIMER}"
+
+
+# ---------------------------------------------------------------------------
+# LLM-grounded synthesis — docs/MODEL_RECOMMENDATION.md §6-8
+# ---------------------------------------------------------------------------
+
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
+
+
+def _parse_json_object(raw: str) -> dict[str, Any]:
+    fence_match = _JSON_FENCE_RE.search(raw)
+    candidate = fence_match.group(1) if fence_match else raw.strip()
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError as exc:
+        raise LLMError(f"response was not valid JSON: {raw!r}") from exc
+    if not isinstance(parsed, dict):
+        raise LLMError(f"response JSON was not an object: {parsed!r}")
+    return parsed
+
+
+def _fallback_confidence_note(profile: dict[str, Any], external_research: list[ResearchEvidence]) -> str:
+    reasons = []
+    if (profile.get("n_documents") or 0) < 50:
+        reasons.append("small dataset size")
+    if not external_research:
+        reasons.append("no external research available")
+    prefix = f"Lower confidence ({', '.join(reasons)}). " if reasons else ""
+    return f"{prefix}This is a degraded, rule-based-only response — LLM synthesis was unavailable."
+
+
+def _llm_synthesize(
+    task_type: str,
+    profile: dict[str, Any],
+    user_constraints: UserConstraints | None,
+    candidates: list[CandidateModel],
+    measured: list[CandidateEvaluation],
+    external_research: list[ResearchEvidence],
+) -> tuple[str, list[str], str, str]:
+    """Returns (recommendation, rationale, system_judgment, confidence_note). Raises LLMError on any
+    failure (call/timeout/malformed response) so the caller's single fallback path handles all of them
+    uniformly."""
+    candidates_text = "\n".join(
+        f"- {c.model_name} ({'default' if c.is_default else 'alternative'}): {c.reason}" for c in candidates
+    )
+    measured_text = (
+        "\n".join(f"- {m.model_name}: accuracy={m.accuracy:.1%}, f1={m.f1:.1%}, n={m.n_examples}" for m in measured)
+        if measured
+        else "(none — no evaluation was run on the user's own data)"
+    )
+    research_text = (
+        "\n".join(f"- {e.claim} — {e.source_title} ({e.source_url})" for e in external_research)
+        if external_research
+        else "(no external evidence found/requested)"
+    )
+    constraints_text = (
+        f"latency_requirement={user_constraints.latency_requirement if user_constraints else None}, "
+        f"compute_constraints={user_constraints.compute_constraints if user_constraints else None}"
+    )
+
+    prompt = f"""You are TextInsight's model recommendation writer for a {task_type} task.
+
+Dataset profile: n_documents={profile.get('n_documents')}, has_labels={profile.get('has_labels')}, \
+avg_length={profile.get('avg_length')}, detected_language={profile.get('detected_language')}.
+User constraints: {constraints_text}
+
+Rule-based candidate shortlist (deterministic — do not invent your own ranking or add candidates):
+{candidates_text}
+
+Measured on the user's own data (real numbers, if any):
+{measured_text}
+
+External research evidence (if any):
+{research_text}
+
+Rules you must follow:
+- Never state a model is objectively "best" unless it was actually measured on the user's own data above.
+- Phrase the recommendation as "Recommended based on dataset characteristics and stated constraints" (or \
+equivalent) — never as an unqualified absolute claim.
+- If you reference an external research claim, cite its source title inline.
+- If measured results exist, prefer the best-measured candidate as your recommendation.
+- Derive confidence_note from the concrete signals above (dataset size, whether evidence was found) — do \
+not invent unrelated reasons.
+
+Respond with ONLY a JSON object, no prose outside it, no markdown fences. ALL FOUR keys below are
+required — never omit "system_judgment" or "confidence_note" even though they're prose, not data:
+{{"recommendation": "<one model_name from the shortlist above, or the best-measured one>", \
+"rationale": ["<reason 1>", "<reason 2>"], "system_judgment": "<REQUIRED: 2-4 sentence recommendation \
+prose, do not skip this key>", "confidence_note": "<REQUIRED: one line on how confident this is and \
+why, do not skip this key>"}}"""
+
+    client = GroqLLMClient()
+    raw = client.complete([{"role": "user", "content": prompt}])
+    parsed = _parse_json_object(raw)
+
+    recommendation = parsed.get("recommendation")
+    rationale = parsed.get("rationale")
+    system_judgment = parsed.get("system_judgment")
+    confidence_note = parsed.get("confidence_note")
+
+    if not (
+        isinstance(recommendation, str)
+        and recommendation
+        and isinstance(rationale, list)
+        and rationale
+        and isinstance(system_judgment, str)
+        and system_judgment
+        and isinstance(confidence_note, str)
+        and confidence_note
+    ):
+        raise LLMError(f"response JSON missing/malformed required fields: {parsed!r}")
+
+    return recommendation, rationale, system_judgment, confidence_note
+
+
+@timed_tool
+def model_recommendation(
+    profile: dict[str, Any],
+    task_type: str,
+    user_constraints: UserConstraints | None = None,
+    research_evidence: list[ResearchEvidence] | None = None,
+    research_attempted: bool = False,
+    evaluation_result: EvaluateCandidatesOutput | None = None,
+) -> ModelRecommendationOutput:
+    candidates = generate_candidates(task_type, user_constraints)
+
+    # Section A — docs/MODEL_RECOMMENDATION.md §7
+    if evaluation_result is not None and not evaluation_result.skipped:
+        measured = evaluation_result.per_model
+        measured_skip_reason = None
+        best = max(measured, key=lambda m: m.accuracy) if measured else None
+        best_accuracy = best.accuracy if best else None
+        default_recommendation = best.model_name if best else candidates[0].model_name
+    else:
+        measured = []
+        best_accuracy = None
+        default_recommendation = candidates[0].model_name
+        if evaluation_result is not None:
+            measured_skip_reason = evaluation_result.skip_reason
+        else:
+            measured_skip_reason = (
+                "No evaluation was run — the dataset either has no labels or evaluate_candidates wasn't called."
+            )
+
+    # Section B — docs/AGENT_WORKFLOWS.md §8: "attempted but unavailable" must read differently from
+    # "never requested" (research_evidence=None is ambiguous between them on its own).
+    external_research = research_evidence or []
+    if external_research:
+        research_note = None
+    elif research_attempted:
+        research_note = "Research was attempted, but no external evidence was available for this query."
+    else:
+        research_note = "External research was not requested for this query."
+
+    fine_tune_note = fine_tune_advisory_note(profile, best_measured_accuracy=best_accuracy)
+
+    # Section C + top-level recommendation/rationale, LLM-grounded with a deterministic fallback
+    try:
+        recommendation, rationale, system_judgment, confidence_note = _llm_synthesize(
+            task_type, profile, user_constraints, candidates, measured, external_research
+        )
+        degraded = False
+    except LLMError:
+        recommendation = default_recommendation
+        rationale = [c.reason for c in candidates]
+        system_judgment = (
+            "Recommended based on dataset characteristics and stated constraints: "
+            f"{default_recommendation}. (LLM synthesis was unavailable — this is the rule-based candidate "
+            "list without prose rationale.)"
+        )
+        confidence_note = _fallback_confidence_note(profile, external_research)
+        degraded = True
+
+    return ModelRecommendationOutput(
+        recommendation=recommendation,
+        rationale=rationale,
+        measured_on_user_data=measured,
+        measured_skip_reason=measured_skip_reason,
+        external_research=external_research,
+        research_note=research_note,
+        system_judgment=system_judgment,
+        confidence_note=confidence_note,
+        fine_tune_note=fine_tune_note,
+        degraded=degraded,
+    )
