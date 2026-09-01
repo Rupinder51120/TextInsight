@@ -1,0 +1,51 @@
+review_id,review_text,rating,label
+0,"Really happy with this blender, works exactly as described.",5,positive
+1,"Poor design on this keyboard, uncomfortable and overpriced.",1,negative
+2,"Really happy with this chair, works exactly as described.",4,positive
+3,Delivery of this blender was delayed by two weeks with no updates.,1,negative
+4,"Really happy with this keyboard, works exactly as described.",4,positive
+5,"This chair broke after just two days, very disappointed.",1,negative
+6,"Excellent value for money, this keyboard is well made.",5,positive
+7,"The blender stopped working after a week, would not recommend.",1,negative
+8,"Excellent value for money, this jacket is well made.",5,positive
+9,"Waste of money, this keyboard does not work as advertised.",2,negative
+10,"Really happy with this headphones, works exactly as described.",5,positive
+11,"Terrible quality jacket, arrived damaged and support ignored me.",2,negative
+12,"Impressed with the build quality of this blender, highly recommend.",5,positive
+13,"Terrible quality watch, arrived damaged and support ignored me.",1,negative
+14,"Impressed with the build quality of this mug, highly recommend.",5,positive
+15,"Poor design on this headphones, uncomfortable and overpriced.",1,negative
+16,Love this lamp! Would definitely buy again from this brand.,4,positive
+17,"Poor design on this headphones, uncomfortable and overpriced.",2,negative
+18,"Impressed with the build quality of this speaker, highly recommend.",5,positive
+19,"Waste of money, this jacket does not work as advertised.",2,negative
+20,Love this lamp! Would definitely buy again from this brand.,4,positive
+21,"Waste of money, this chair does not work as advertised.",1,negative
+22,"Great quality speaker, fast shipping and excellent packaging.",5,positive
+23,"The chair stopped working after a week, would not recommend.",1,negative
+24,"Best blender I have purchased this year, works perfectly.",4,positive
+25,"This jacket broke after just two days, very disappointed.",2,negative
+26,"Impressed with the build quality of this headphones, highly recommend.",4,positive
+27,"Disappointing purchase, this keyboard feels cheaply made.",2,negative
+28,"Excellent value for money, this speaker is well made.",4,positive
+29,"The backpack stopped working after a week, would not recommend.",1,negative
+30,"Impressed with the build quality of this mug, highly recommend.",5,positive
+31,Delivery of this jacket was delayed by two weeks with no updates.,1,negative
+32,"Great quality chair, fast shipping and excellent packaging.",5,positive
+33,"Terrible quality blender, arrived damaged and support ignored me.",1,negative
+34,"Great quality backpack, fast shipping and excellent packaging.",5,positive
+35,"Terrible quality watch, arrived damaged and support ignored me.",2,negative
+36,"Superb chair, customer support was also very helpful.",5,positive
+37,"This headphones broke after just two days, very disappointed.",2,negative
+38,"Best headphones I have purchased this year, works perfectly.",5,positive
+39,Delivery of this backpack was delayed by two weeks with no updates.,2,negative
+40,"This lamp is absolutely fantastic, exceeded all my expectations.",4,positive
+41,"Terrible quality lamp, arrived damaged and support ignored me.",1,negative
+42,"Great quality jacket, fast shipping and excellent packaging.",4,positive
+43,"This mug broke after just two days, very disappointed.",2,negative
+44,"Superb blender, customer support was also very helpful.",4,positive
+45,"Disappointing purchase, this lamp feels cheaply made.",1,negative
+46,"This keyboard is absolutely fantastic, exceeded all my expectations.",4,positive
+47,"Terrible quality speaker, arrived damaged and support ignored me.",1,negative
+48,"Great quality backpack, fast shipping and excellent packaging.",5,positive
+49,"Waste of money, this lamp does not work as advertised.",2,negative
