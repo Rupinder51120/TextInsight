@@ -1,3 +1,4 @@
+from tools.evaluate_candidates import evaluate_candidates
 from tools.filter_documents import filter_documents
 from tools.generate_embeddings import generate_embeddings
 from tools.profile_dataset import profile_dataset
@@ -14,4 +15,5 @@ __all__ = [
     "generate_embeddings",
     "semantic_search",
     "filter_documents",
+    "evaluate_candidates",
 ]

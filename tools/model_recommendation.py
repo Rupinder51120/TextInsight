@@ -17,10 +17,16 @@ from tools.schemas import CandidateModel, UserConstraints
 # smaller/distilled model per docs/TOOLS_AND_MODELS.md's own "Default Pretrained Model Choices" table, so
 # "favor distilled variants under latency/CPU constraints" (§3) naturally keeps it first; alternatives are
 # the named larger/well-known models real users specifically ask about (e.g. "BERT vs DistilBERT").
+#
+# Sentiment's BERT-base alternative was verified live before being added here: textattack/bert-base-
+# uncased-SST-2 outputs raw, unmapped "LABEL_0"/"LABEL_1" — evaluate_candidates' label normalization
+# (tools/evaluate_candidates.py) would never match those against "positive"/"negative" ground truth,
+# silently reporting ~0% accuracy for a model that might actually perform fine. Dropped rather than
+# shipped broken; cardiffnlp's RoBERTa-base variant (verified clean "positive"/"negative" output) is kept
+# as the sole named alternative, which still satisfies §3's "1-2 named alternatives."
 _TASK_CANDIDATES: dict[str, list[tuple[str, bool]]] = {
     "sentiment": [
         ("distilbert-base-uncased-finetuned-sst-2-english", True),
-        ("textattack/bert-base-uncased-SST-2", False),
         ("cardiffnlp/twitter-roberta-base-sentiment-latest", False),
     ],
     "classification": [

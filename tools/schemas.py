@@ -176,3 +176,31 @@ class CandidateModel(BaseModel):
     model_name: str
     is_default: bool
     reason: str
+
+
+# ---------------------------------------------------------------------------
+# evaluate_candidates — docs/TOOLS_AND_MODELS.md #10a
+# ---------------------------------------------------------------------------
+
+
+class EvaluateCandidatesInput(BaseModel):
+    corpus_ref: str
+    profile: dict[str, Any]
+    candidate_models: list[str]
+    sample_size: int = 500
+
+
+class CandidateEvaluation(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())  # "model_name" is the doc-specified field name
+
+    model_name: str
+    accuracy: float
+    f1: float
+    n_examples: int
+
+
+class EvaluateCandidatesOutput(BaseModel):
+    per_model: list[CandidateEvaluation]
+    skipped: bool
+    skip_reason: str | None = None
+    latency_ms: float = 0.0
