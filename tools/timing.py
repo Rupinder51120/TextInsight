@@ -13,15 +13,28 @@ from typing import Callable, TypeVar
 
 from pydantic import BaseModel
 
+from observability.logging import get_logger
+
 OutputT = TypeVar("OutputT", bound=BaseModel)
+
+_logger = get_logger("tool")
 
 
 def timed_tool(fn: Callable[..., OutputT]) -> Callable[..., OutputT]:
     @functools.wraps(fn)
     def wrapper(*args, **kwargs) -> OutputT:
         start = time.perf_counter()
-        result = fn(*args, **kwargs)
-        result.latency_ms = (time.perf_counter() - start) * 1000
+        try:
+            result = fn(*args, **kwargs)
+        except Exception as exc:
+            duration_ms = (time.perf_counter() - start) * 1000
+            _logger.error(
+                "tool_execution", tool=fn.__name__, duration_ms=round(duration_ms, 2), success=False, error=str(exc)
+            )
+            raise
+        duration_ms = (time.perf_counter() - start) * 1000
+        result.latency_ms = duration_ms
+        _logger.info("tool_execution", tool=fn.__name__, duration_ms=round(duration_ms, 2), success=True)
         return result
 
     return wrapper

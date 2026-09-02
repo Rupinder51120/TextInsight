@@ -45,7 +45,7 @@ class TestResearchModels:
         monkeypatch.setattr(
             research_models_module,
             "GroqLLMClient",
-            lambda: MagicMock(complete=lambda m: "BERT is a transformer-based model."),
+            lambda: MagicMock(complete=lambda m, **kwargs: "BERT is a transformer-based model."),
         )
 
         result = research_models(task_type="sentiment", candidate_models=["BERT"], client=fake_client)

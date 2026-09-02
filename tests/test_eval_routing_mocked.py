@@ -15,7 +15,7 @@ def test_mocked_deterministic_responses_all_pass(monkeypatch):
     responses = {case.query: json.dumps({"plan": case.required}) for case in EVAL_CASES}
 
     mock_client = MagicMock()
-    mock_client.complete.side_effect = lambda messages: responses[messages[-1]["content"]]
+    mock_client.complete.side_effect = lambda messages, **kwargs: responses[messages[-1]["content"]]
     monkeypatch.setattr(nodes, "GroqLLMClient", lambda: mock_client)
 
     results = run_eval()

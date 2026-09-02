@@ -224,7 +224,7 @@ prose, do not skip this key>", "confidence_note": "<REQUIRED: one line on how co
 why, do not skip this key>"}}"""
 
     client = GroqLLMClient()
-    raw = client.complete([{"role": "user", "content": prompt}])
+    raw = client.complete([{"role": "user", "content": prompt}], context="model_recommendation")
     parsed = _parse_json_object(raw)
 
     recommendation = parsed.get("recommendation")

@@ -270,7 +270,8 @@ def understand_intent(state: AgentState) -> AgentState:
             [
                 {"role": "system", "content": _TOOL_CATALOG_PROMPT},
                 {"role": "user", "content": query},
-            ]
+            ],
+            context="understand_intent",
         )
         state["plan"] = _parse_plan(raw)
     except LLMError as exc:
@@ -372,7 +373,7 @@ def synthesize(state: AgentState) -> AgentState:
             f"User question: {state['user_query']}\n\n"
             f"Tool results:\n{_format_tool_results(state)}"
         )
-        answer = client.complete([{"role": "user", "content": prompt}])
+        answer = client.complete([{"role": "user", "content": prompt}], context="synthesize")
     except LLMError:
         answer = _fallback_summary(state)
 

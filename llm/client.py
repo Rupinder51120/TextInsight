@@ -11,6 +11,9 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from config import settings
+from observability.logging import get_logger
+
+_logger = get_logger("llm")
 
 
 class LLMError(RuntimeError):
@@ -21,8 +24,13 @@ class LLMClient(ABC):
     """Thin provider-agnostic interface. See docs/ARCHITECTURE.md §2."""
 
     @abstractmethod
-    def complete(self, messages: list[dict[str, str]]) -> str:
-        """Send a list of {role, content} messages, return the assistant's text response."""
+    def complete(self, messages: list[dict[str, str]], context: str = "unspecified") -> str:
+        """Send a list of {role, content} messages, return the assistant's text response.
+
+        `context` is a caller-supplied label (e.g. the calling graph node or tool name) used only for
+        structured logging (item 3 of the 2026-09-02 scope revision) — it has no effect on the request
+        sent to the provider.
+        """
 
     @abstractmethod
     def bind_tools(self, tools: list[Any]) -> "LLMClient":
@@ -61,15 +69,35 @@ class GroqLLMClient(LLMClient):
         if bound_tools:
             self._chat = self._chat.bind_tools(bound_tools)
 
-    def complete(self, messages: list[dict[str, str]]) -> str:
+    def complete(self, messages: list[dict[str, str]], context: str = "unspecified") -> str:
+        start = time.perf_counter()
         last_exc: Exception | None = None
         for attempt in range(self._MAX_RETRIES):
             try:
                 response = self._chat.invoke(messages)
+                duration_ms = (time.perf_counter() - start) * 1000
+                _logger.info(
+                    "llm_call",
+                    node=context,
+                    model=settings.groq_model,
+                    duration_ms=round(duration_ms, 2),
+                    success=True,
+                    attempt=attempt + 1,
+                )
                 return response.content
             except Exception as exc:  # noqa: BLE001 — provider errors are inspected below, not swallowed
                 last_exc = exc
                 if not self._is_retryable(exc) or attempt == self._MAX_RETRIES - 1:
+                    duration_ms = (time.perf_counter() - start) * 1000
+                    _logger.error(
+                        "llm_call",
+                        node=context,
+                        model=settings.groq_model,
+                        duration_ms=round(duration_ms, 2),
+                        success=False,
+                        error=str(exc),
+                        attempt=attempt + 1,
+                    )
                     raise LLMError(f"Groq call failed: {exc}") from exc
                 time.sleep(self._BACKOFF_BASE_SECONDS * (2**attempt))
         raise LLMError(f"Groq call failed after {self._MAX_RETRIES} attempts: {last_exc}")

@@ -2,6 +2,9 @@
 validation (Pydantic), invokes the LangGraph agent; no business logic beyond that, per the doc.
 """
 
+import time
+
+import structlog
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -15,9 +18,56 @@ from backend.schemas import (
 )
 from backend.session import SessionNotFoundError, session_store
 from ingestion import IngestionError, corpus_store, load_csv, load_pdf, load_txt
+from observability.logging import get_logger
+from observability.metrics import metrics_registry
 from tools.profile_dataset import profile_dataset
 
 app = FastAPI(title="TextInsight API")
+
+_request_logger = get_logger("request")
+
+
+class RequestLoggingMiddleware:
+    """Every request (item 3, 2026-09-02 scope revision): logs endpoint/method/status/duration and feeds
+    the /metrics counters. session_id is bound as a contextvar by the handlers below (upload/query/history)
+    as soon as it's known, so it's merged into this log line automatically.
+
+    Deliberately a raw ASGI middleware, not `@app.middleware("http")` (Starlette's `BaseHTTPMiddleware`):
+    `BaseHTTPMiddleware.call_next` runs the downstream route handler in a separate anyio task, so a
+    contextvar bound inside the handler (session_id) does not propagate back to code running after
+    `call_next` returns — a well-known Starlette gotcha that silently dropped session_id from this exact
+    log line during testing. Awaiting `self.app(...)` directly, in the same task, avoids it.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(endpoint=scope["path"], method=scope["method"])
+
+        status_holder: dict[str, int] = {}
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                status_holder["status"] = message["status"]
+            await send(message)
+
+        start = time.perf_counter()
+        await self.app(scope, receive, send_wrapper)
+        duration_ms = (time.perf_counter() - start) * 1000
+
+        status = status_holder.get("status", 500)
+        metrics_registry.record_request(duration_ms, is_error=status >= 400)
+        _request_logger.info("request", status=status, duration_ms=round(duration_ms, 2))
+
+
+app.add_middleware(RequestLoggingMiddleware)
+
 
 # Single-user local/demo deployment (docs/PROJECT_SPEC.md §10: no multi-tenant/enterprise auth in scope) —
 # the frontend runs as a separate process/container per docs/TECH_STACK.md, so permissive CORS here is a
@@ -62,6 +112,7 @@ async def upload(file: UploadFile = File(...), session_id: str | None = Form(Non
 
     if session_id is None or not session_store.exists(session_id):
         session_id = session_store.create()
+    structlog.contextvars.bind_contextvars(session_id=session_id)
 
     profile_output = profile_dataset(corpus_ref=corpus.corpus_ref)
     profile_dict = profile_output.model_dump()
@@ -80,6 +131,7 @@ async def upload(file: UploadFile = File(...), session_id: str | None = Form(Non
 
 @app.post("/query", response_model=QueryResponse)
 async def query(request: QueryRequest):
+    structlog.contextvars.bind_contextvars(session_id=request.session_id)
     try:
         session = session_store.get(request.session_id)
     except SessionNotFoundError as exc:
@@ -112,6 +164,7 @@ async def query(request: QueryRequest):
 
 @app.get("/session/{session_id}/history", response_model=HistoryResponse)
 async def history(session_id: str):
+    structlog.contextvars.bind_contextvars(session_id=session_id)
     try:
         session = session_store.get(session_id)
     except SessionNotFoundError as exc:
@@ -121,3 +174,11 @@ async def history(session_id: str):
         session_id=session_id,
         chat_history=[HistoryTurn(**turn) for turn in session.chat_history],
     )
+
+
+@app.get("/metrics")
+async def metrics():
+    """Basic in-process counters (item 3, 2026-09-02 scope revision) — request count, average latency,
+    error rate. Not Prometheus-formatted; a plain JSON summary is the documented scope here (see
+    docs/TECH_STACK.md)."""
+    return metrics_registry.snapshot()
