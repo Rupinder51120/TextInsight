@@ -13,6 +13,7 @@ query-time embedding, per docs/TOOLS_AND_MODELS.md #7 ("same embedding model as 
 """
 
 import json
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -23,14 +24,34 @@ EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 _INDEX_DIR = Path(__file__).resolve().parent.parent / "sessions" / "faiss"
 _model_cache: dict[str, object] = {}
+_model_lock = threading.Lock()
 
 
 def _get_embedding_model():
+    """Double-checked locking, same pattern as models/registry.py's get_pipeline(). This alone turned out
+    NOT to be sufficient once backend/main.py started offloading /query's agent execution to a thread
+    pool: concurrent first-time calls from multiple threads into this function AND models/registry.py's
+    get_pipeline() (two different locks, two different caches) could still race on transformers' own
+    shared internal lazy-import state, observed as "cannot import name 'AutoConfig' from 'transformers'"
+    and "'module' object is not callable" under concurrent load — sometimes crashing the process outright.
+    backend/main.py's startup warm-up (warm_up_all_models) is the real fix: every model, including this
+    one, is loaded once before the server accepts any traffic, so this function's cache is always already
+    populated by the time a second thread could ever reach it concurrently. The lock stays as a defense-in-
+    depth guard, not the primary fix."""
     if "model" not in _model_cache:
-        from sentence_transformers import SentenceTransformer
+        with _model_lock:
+            if "model" not in _model_cache:
+                from sentence_transformers import SentenceTransformer
 
-        _model_cache["model"] = SentenceTransformer(EMBEDDING_MODEL)
+                _model_cache["model"] = SentenceTransformer(EMBEDDING_MODEL)
     return _model_cache["model"]
+
+
+def warm_up_embedding_model() -> None:
+    """Eagerly load the embedding model — called once at process startup (backend/main.py's lifespan), not
+    per-request. See _get_embedding_model's docstring for why this, not just locking, is the real fix for
+    the concurrent-first-load race."""
+    _get_embedding_model()
 
 
 def _paths(corpus_ref: str) -> tuple[Path, Path]:

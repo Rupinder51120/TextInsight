@@ -3,9 +3,11 @@ validation (Pydantic), invokes the LangGraph agent; no business logic beyond tha
 """
 
 import time
+from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -21,11 +23,41 @@ from backend.schemas import (
 )
 from backend.session import SessionNotFoundError, session_store
 from ingestion import IngestionError, corpus_store, load_csv, load_pdf, load_txt
+from models.faiss_index import warm_up_embedding_model
+from models.registry import get_sentiment_pipeline, get_summarization_pipeline, get_zero_shot_pipeline
 from observability.logging import get_logger
 from observability.metrics import metrics_registry
 from tools.profile_dataset import profile_dataset
 
-app = FastAPI(title="TextInsight API")
+_startup_logger = get_logger("startup")
+
+
+def _warm_up_all_models() -> None:
+    """Eagerly load every default model once at process startup, per
+    docs/LATENCY_AND_PERFORMANCE.md §4's originally-intended "loaded once at process startup" option --
+    only the lazy "on first use" half was ever built until now. This is the actual fix for the concurrent-
+    first-load race documented in LOAD_TEST_RESULTS.md: locking each cache individually (models/registry.py,
+    models/faiss_index.py) was not enough, because the race was in transformers' own shared internal
+    lazy-import state, not in either cache. Loading everything before the server accepts any traffic means
+    no two requests can ever both be first to load the same model, because nothing is ever first at
+    request time -- eliminating the race entirely rather than narrowing it.
+    """
+    start = time.perf_counter()
+    get_sentiment_pipeline()
+    get_zero_shot_pipeline()
+    get_summarization_pipeline()
+    warm_up_embedding_model()
+    duration_ms = (time.perf_counter() - start) * 1000
+    _startup_logger.info("model_warmup", duration_ms=round(duration_ms, 2))
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _warm_up_all_models()
+    yield
+
+
+app = FastAPI(title="TextInsight API", lifespan=lifespan)
 
 # Rate limiting (item 4, 2026-09-02 scope revision): protects this API from being hammered by one client,
 # separate from llm/client.py's Groq-side retry/backoff handling (docs/SECURITY_AND_RELIABILITY.md §6-7),
@@ -154,7 +186,14 @@ async def query(request: Request, payload: QueryRequest):
     if session.corpus_ref is None:
         raise HTTPException(status_code=400, detail="No file has been uploaded for this session yet.")
 
-    result = run_agent(
+    # run_agent is synchronous (it calls blocking HF/FAISS inference and Groq HTTP calls directly) --
+    # awaiting it inline in this async def handler would hold the single event loop for its full duration,
+    # serializing every concurrent /query request behind it (the exact bottleneck LOAD_TEST_RESULTS.md's
+    # first run measured: ~1x effective concurrency across 15 simultaneous requests, not 10x). Offloading
+    # to FastAPI's thread pool lets the event loop dispatch to other requests while this one runs, and lets
+    # PyTorch/HTTP I/O actually overlap across threads instead of monopolizing the one thread that matters.
+    result = await run_in_threadpool(
+        run_agent,
         session_id=payload.session_id,
         corpus_ref=session.corpus_ref,
         user_query=payload.query,
