@@ -195,13 +195,21 @@ through; run individually or with a short pause between queries and every query 
 - Zero-shot classification and the multi-step diagnostic workflow are the slowest default flows (see
   benchmarks above).
 - Research evidence credibility filtering is source-type-based only, not deep fact-checking.
-- Session-scoped state only, in-process — no database, no persistence across a server restart (a deliberate
-  design choice, not a gap; see `CLAUDE.md` §3.5).
+- Session state is Redis-backed (not in-process), so it survives a backend process restart as long as
+  Redis itself keeps running (see `docs/TECH_STACK.md`'s Session State: Redis section, `CLAUDE.md` §3.5).
+  Still a single-instance deployment target — no clustering/replication — and Redis remains a key-value
+  session store, not a relational database, per that same section.
 - English-first models by default; other-language support is not validated.
 - Scanned/image PDFs (no extractable text) are not supported — no OCR.
 - Running the full 10-query smoke test as one rapid batch can trip Groq's per-minute (not daily) token
   rate limit on the free/on-demand tier; each query completes cleanly with `error: null` when run
   individually or spaced out (see Latency Benchmarks above).
+- `SessionStore`'s per-session updates (`update_profile`, `append_turn`) are a plain Redis read-modify-write,
+  not an atomic transaction. Two concurrent requests against the *same* `session_id` (e.g. two tabs on one
+  session) can race, with the second silently overwriting the first's `chat_history`/profile update. This
+  became reachable, not introduced, by the 2026-09-02 fix that lets `/query` requests genuinely run in
+  parallel (see `LOAD_TEST_RESULTS.md`); identified and documented (`docs/SECURITY_AND_RELIABILITY.md` §13),
+  not fixed.
 
 ## Future Work
 

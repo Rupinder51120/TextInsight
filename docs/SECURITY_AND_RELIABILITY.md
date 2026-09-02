@@ -61,9 +61,17 @@
 
 ## 8. Rate Limits
 
-- Provider-side rate limits (Groq, search API) are respected via the backoff behavior in §7; the project
-  does not implement its own user-facing rate limiting for the 5-day scope (single-user/demo context), but
-  the `LLMClient`/`ResearchClient` abstraction would be the natural place to add it later.
+- Provider-side rate limits (Groq, search API) are respected via the backoff behavior in §7 — this protects
+  against the *providers'* limits, not this API's own.
+- This API's own rate limiting (added 2026-09-02, via `slowapi`): `POST /query` is capped at 10
+  requests/minute per client IP (`backend/main.py`), returning `429` over the limit. Not covered:
+  - **`/upload`, `/session/{id}/history`, and `/metrics` are unlimited** — only `/query` (the endpoint that
+    triggers the LLM/model pipeline) is rate-limited.
+  - **No per-user quotas** — there is no user/auth concept at all (single-user/demo scope, `PROJECT_SPEC.md`
+    §10); the limit is purely per-client-IP.
+  - **No distributed rate limiting.** The limiter is in-memory and per-process — accurate for this
+    project's single-instance deployment target, but it would not share state across multiple backend
+    replicas/workers if one were ever run (each would enforce its own independent 10/minute).
 
 ## 9. Unsafe Tool Execution
 
@@ -99,3 +107,22 @@
 - Every external claim surfaced anywhere in the UI carries a visible source (title + link), consistent
   end-to-end from `research_models`'s output schema through to the Streamlit evidence cards
   (`UI_SPEC.md` §6).
+
+## 13. Known Limitation: Session State Race Under Concurrent Requests
+
+- `backend/main.py`'s `/query` handler offloads agent execution to a thread pool
+  (`fastapi.concurrency.run_in_threadpool`, added 2026-09-02 — see `LOAD_TEST_RESULTS.md`) so that
+  concurrent requests genuinely run in parallel rather than queuing behind one another. This makes a
+  pre-existing risk in `backend/session.py`'s `SessionStore` newly reachable, though it has not been
+  observed or demonstrated failing.
+- `SessionStore.update_profile` and `SessionStore.append_turn` are a plain read-modify-write against Redis
+  (`get` → mutate the in-memory `SessionData` → `set`), not an atomic transaction (no `WATCH`/`MULTI`, no
+  optimistic locking). If two requests for the *same* `session_id` are in flight at the same time — e.g.
+  two browser tabs on the same session, or a retried request racing the original — the second `set` can
+  overwrite the first, silently dropping a `chat_history` entry or a profile update rather than merging
+  both.
+- **Identified, not fixed.** This is documented here as an honestly-acknowledged gap, per the same standard
+  used throughout this project (see `LOAD_TEST_RESULTS.md`'s own caveats section, where this was first
+  noted) — not something a workaround was attempted for. A real fix would need either a Redis transaction
+  (`WATCH`/`MULTI`/`EXEC`) around each read-modify-write, or moving `chat_history` to a Redis list
+  (`RPUSH`, naturally append-only and race-free) instead of a field inside one JSON blob.
