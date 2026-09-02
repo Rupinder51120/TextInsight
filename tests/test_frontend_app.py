@@ -71,7 +71,12 @@ class TestResultRendering:
                 "generate_embeddings": {"index_id": "x", "n_vectors": 5, "dim": 384, "built": True, "cached": False},
                 "research_models": {
                     "evidence": [
-                        {"claim": "X is faster.", "source_title": "HF card", "source_url": "https://hf.co/x", "snippet": "..."}
+                        {
+                            "claim": "X is faster.",
+                            "source_title": "HF card",
+                            "source_url": "https://hf.co/x",
+                            "snippet": "...",
+                        }
                     ],
                     "found": True,
                 },
@@ -79,11 +84,21 @@ class TestResultRendering:
                     "recommendation": "distilbert-base-uncased-finetuned-sst-2-english",
                     "rationale": ["Small dataset favors pretrained."],
                     "measured_on_user_data": [
-                        {"model_name": "distilbert-base-uncased-finetuned-sst-2-english", "accuracy": 0.95, "f1": 0.94, "n_examples": 25}
+                        {
+                            "model_name": "distilbert-base-uncased-finetuned-sst-2-english",
+                            "accuracy": 0.95,
+                            "f1": 0.94,
+                            "n_examples": 25,
+                        }
                     ],
                     "measured_skip_reason": None,
                     "external_research": [
-                        {"claim": "X is faster.", "source_title": "HF card", "source_url": "https://hf.co/x", "snippet": "..."}
+                        {
+                            "claim": "X is faster.",
+                            "source_title": "HF card",
+                            "source_url": "https://hf.co/x",
+                            "snippet": "...",
+                        }
                     ],
                     "research_note": None,
                     "system_judgment": "Recommended based on dataset characteristics.",
@@ -123,7 +138,11 @@ class TestResultRendering:
         at = _app_with_history({"query": "Should I use BERT or DistilBERT?", "response": response})
 
         assert not at.exception
-        all_text = " ".join(m.value for m in at.markdown) + " ".join(c.value for c in at.caption) + " ".join(i.value for i in at.info)
+        all_text = (
+            " ".join(m.value for m in at.markdown)
+            + " ".join(c.value for c in at.caption)
+            + " ".join(i.value for i in at.info)
+        )
         assert "does not perform training or fine-tuning" in all_text
         assert "No evaluation was run." in all_text
         assert "not requested" in all_text

@@ -75,7 +75,9 @@ class GroqLLMClient(LLMClient):
         raise LLMError(f"Groq call failed after {self._MAX_RETRIES} attempts: {last_exc}")
 
     def bind_tools(self, tools: list[Any]) -> "GroqLLMClient":
-        return GroqLLMClient(model=self._chat.model_name if hasattr(self._chat, "model_name") else None, bound_tools=tools)
+        return GroqLLMClient(
+            model=self._chat.model_name if hasattr(self._chat, "model_name") else None, bound_tools=tools
+        )
 
     @staticmethod
     def _is_retryable(exc: Exception) -> bool:

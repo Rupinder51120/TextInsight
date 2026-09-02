@@ -23,7 +23,11 @@ class TestTavilyResearchClient:
         mock_tavily = MagicMock()
         mock_tavily.search.return_value = {
             "results": [
-                {"title": "DistilBERT model card", "url": "https://hf.co/distilbert", "content": "A distilled version of BERT."},
+                {
+                    "title": "DistilBERT model card",
+                    "url": "https://hf.co/distilbert",
+                    "content": "A distilled version of BERT.",
+                },
             ]
         }
         monkeypatch.setattr("tavily.TavilyClient", lambda **kwargs: mock_tavily)

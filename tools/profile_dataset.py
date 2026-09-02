@@ -41,9 +41,17 @@ def _length_distribution(lengths: list[int]) -> dict[str, float]:
     sorted_lengths = sorted(lengths)
     return {
         "min": float(sorted_lengths[0]),
-        "p25": float(statistics.quantiles(sorted_lengths, n=4)[0]) if len(sorted_lengths) >= 2 else float(sorted_lengths[0]),
+        "p25": (
+            float(statistics.quantiles(sorted_lengths, n=4)[0])
+            if len(sorted_lengths) >= 2
+            else float(sorted_lengths[0])
+        ),
         "median": float(statistics.median(sorted_lengths)),
-        "p75": float(statistics.quantiles(sorted_lengths, n=4)[2]) if len(sorted_lengths) >= 2 else float(sorted_lengths[-1]),
+        "p75": (
+            float(statistics.quantiles(sorted_lengths, n=4)[2])
+            if len(sorted_lengths) >= 2
+            else float(sorted_lengths[-1])
+        ),
         "max": float(sorted_lengths[-1]),
     }
 

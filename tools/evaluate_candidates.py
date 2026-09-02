@@ -104,8 +104,6 @@ def evaluate_candidates(
         predictions = [_normalize_label(r["label"]) for r in raw_results]
 
         accuracy, f1 = _compute_metrics(ground_truth, predictions)
-        per_model.append(
-            CandidateEvaluation(model_name=model_name, accuracy=accuracy, f1=f1, n_examples=len(sample))
-        )
+        per_model.append(CandidateEvaluation(model_name=model_name, accuracy=accuracy, f1=f1, n_examples=len(sample)))
 
     return EvaluateCandidatesOutput(per_model=per_model, skipped=False)

@@ -48,9 +48,7 @@ def load_pdf(content: bytes, filename: str) -> Corpus:
         documents = [Document(id="0", text="\n\n".join(non_empty_pages), metadata={"page_count": page_limit})]
     else:
         documents = [
-            Document(id=str(i), text=page, metadata={"page_number": i})
-            for i, page in enumerate(pages)
-            if page
+            Document(id=str(i), text=page, metadata={"page_number": i}) for i, page in enumerate(pages) if page
         ]
 
     return Corpus(

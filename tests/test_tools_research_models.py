@@ -38,9 +38,15 @@ class TestBuildQuery:
 class TestResearchModels:
     def test_well_formed_results_propagate_source_title_and_url(self, monkeypatch):
         fake_client = FakeResearchClient(
-            results=[Evidence(title="BERT paper", url="https://arxiv.org/abs/bert", snippet="BERT is a transformer model.")]
+            results=[
+                Evidence(title="BERT paper", url="https://arxiv.org/abs/bert", snippet="BERT is a transformer model.")
+            ]
         )
-        monkeypatch.setattr(research_models_module, "GroqLLMClient", lambda: MagicMock(complete=lambda m: "BERT is a transformer-based model."))
+        monkeypatch.setattr(
+            research_models_module,
+            "GroqLLMClient",
+            lambda: MagicMock(complete=lambda m: "BERT is a transformer-based model."),
+        )
 
         result = research_models(task_type="sentiment", candidate_models=["BERT"], client=fake_client)
 

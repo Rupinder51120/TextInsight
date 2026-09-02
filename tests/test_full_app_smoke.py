@@ -43,7 +43,11 @@ def _upload(client, filename: str) -> str:
 def test_example_query_produces_a_grounded_response(client, case):
     # labeled_sentiment.csv has real labels, which matters for the model-recommendation queries'
     # evaluate_candidates step; the plain reviews.csv fixture is unlabeled.
-    filename = "labeled_sentiment.csv" if "model" in case.expected_intent or "recommendation" in case.expected_intent else "reviews.csv"
+    filename = (
+        "labeled_sentiment.csv"
+        if "model" in case.expected_intent or "recommendation" in case.expected_intent
+        else "reviews.csv"
+    )
     session_id = _upload(client, filename)
 
     resp = client.post("/query", json={"session_id": session_id, "query": case.query})

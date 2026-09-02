@@ -9,7 +9,7 @@ import sys
 import pytest
 
 from tools.model_recommendation import model_recommendation
-from tools.schemas import CandidateEvaluation, EvaluateCandidatesOutput, ResearchEvidence, UserConstraints
+from tools.schemas import CandidateEvaluation, EvaluateCandidatesOutput, ResearchEvidence
 
 # See tests/test_tools_sentiment_logic.py's comment: sys.modules is the only lookup immune to a future
 # tools/__init__.py re-export shadow, so monkeypatch targets go through it.
@@ -44,7 +44,9 @@ class TestSmallUnlabeledDataset:
 
         assert result.measured_on_user_data == []
         assert result.measured_skip_reason is not None
-        assert "no labels" in result.measured_skip_reason.lower() or "no evaluation" in result.measured_skip_reason.lower()
+        assert (
+            "no labels" in result.measured_skip_reason.lower() or "no evaluation" in result.measured_skip_reason.lower()
+        )
 
     def test_disclaimer_present_regardless_of_llm_prose(self, monkeypatch):
         _mock_llm(monkeypatch, _GOOD_LLM_RESPONSE)
@@ -60,8 +62,12 @@ class TestLabeledDatasetWithEvaluation:
 
         evaluation = EvaluateCandidatesOutput(
             per_model=[
-                CandidateEvaluation(model_name="distilbert-base-uncased-finetuned-sst-2-english", accuracy=0.92, f1=0.91, n_examples=25),
-                CandidateEvaluation(model_name="textattack/bert-base-uncased-SST-2", accuracy=0.6, f1=0.55, n_examples=25),
+                CandidateEvaluation(
+                    model_name="distilbert-base-uncased-finetuned-sst-2-english", accuracy=0.92, f1=0.91, n_examples=25
+                ),
+                CandidateEvaluation(
+                    model_name="textattack/bert-base-uncased-SST-2", accuracy=0.6, f1=0.55, n_examples=25
+                ),
             ],
             skipped=False,
         )
@@ -82,7 +88,11 @@ class TestLabeledDatasetWithEvaluation:
         _mock_llm(monkeypatch, _GOOD_LLM_RESPONSE)
 
         evaluation = EvaluateCandidatesOutput(
-            per_model=[CandidateEvaluation(model_name="distilbert-base-uncased-finetuned-sst-2-english", accuracy=0.95, f1=0.94, n_examples=200)],
+            per_model=[
+                CandidateEvaluation(
+                    model_name="distilbert-base-uncased-finetuned-sst-2-english", accuracy=0.95, f1=0.94, n_examples=200
+                )
+            ],
             skipped=False,
         )
 

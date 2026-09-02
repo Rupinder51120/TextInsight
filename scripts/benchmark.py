@@ -7,7 +7,6 @@ Run: KMP_DUPLICATE_LIB_OK=TRUE python scripts/benchmark.py
 """
 
 import statistics
-import time
 from pathlib import Path
 
 from ingestion import load_csv
@@ -46,7 +45,9 @@ def main() -> None:
 
     # --- profile_dataset ---
     times = [profile_dataset(corpus_ref=corpus.corpus_ref).latency_ms for _ in range(N_RUNS)]
-    print(f"\nprofile_dataset (n={N_RUNS}): median={statistics.median(times):.0f} ms, range={min(times):.0f}-{max(times):.0f} ms")
+    print(
+        f"\nprofile_dataset (n={N_RUNS}): median={statistics.median(times):.0f} ms, range={min(times):.0f}-{max(times):.0f} ms"
+    )
 
     # --- sentiment_analysis (batch of 50) ---
     cold = sentiment_analysis(corpus_ref=corpus.corpus_ref).latency_ms
@@ -56,7 +57,9 @@ def main() -> None:
     # --- text_classification (zero-shot, batch of 50) ---
     labels = ["quality", "shipping", "customer_service", "price"]
     cold = text_classification(corpus_ref=corpus.corpus_ref, candidate_labels=labels).latency_ms
-    warm = [text_classification(corpus_ref=corpus.corpus_ref, candidate_labels=labels).latency_ms for _ in range(N_RUNS)]
+    warm = [
+        text_classification(corpus_ref=corpus.corpus_ref, candidate_labels=labels).latency_ms for _ in range(N_RUNS)
+    ]
     _report("text_classification (zero-shot, batch of 50)", cold, warm)
 
     # --- summarize_text (batch_digest over 50 docs) ---
@@ -79,7 +82,10 @@ def main() -> None:
     _report("generate_embeddings (index build, 50 docs)", cold, warm)
 
     generate_embeddings(corpus_ref=corpus.corpus_ref)  # ensure an index exists for the main corpus
-    query_times = [semantic_search(corpus_ref=corpus.corpus_ref, query="delayed delivery complaints").latency_ms for _ in range(N_RUNS)]
+    query_times = [
+        semantic_search(corpus_ref=corpus.corpus_ref, query="delayed delivery complaints").latency_ms
+        for _ in range(N_RUNS)
+    ]
     print(
         f"semantic_search (query only, warm, n={N_RUNS}): "
         f"median={statistics.median(query_times):.0f} ms, range={min(query_times):.0f}-{max(query_times):.0f} ms"
@@ -94,9 +100,13 @@ def main() -> None:
         "distilbert-base-uncased-finetuned-sst-2-english",  # already warm from the sentiment_analysis run above
         "cardiffnlp/twitter-roberta-base-sentiment-latest",  # first load happens on this tool's first call
     ]
-    cold = evaluate_candidates(corpus_ref=labeled_corpus.corpus_ref, profile=profile, candidate_models=candidate_models).latency_ms
+    cold = evaluate_candidates(
+        corpus_ref=labeled_corpus.corpus_ref, profile=profile, candidate_models=candidate_models
+    ).latency_ms
     warm = [
-        evaluate_candidates(corpus_ref=labeled_corpus.corpus_ref, profile=profile, candidate_models=candidate_models).latency_ms
+        evaluate_candidates(
+            corpus_ref=labeled_corpus.corpus_ref, profile=profile, candidate_models=candidate_models
+        ).latency_ms
         for _ in range(N_RUNS)
     ]
     _report("evaluate_candidates (2 candidates x 25 labeled examples)", cold, warm)

@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # Redis backs SessionStore (CLAUDE.md §3.5, revised 2026-09-02) — tests/test_session_store.py needs a
+    # real Redis to run rather than skip. Mapped to localhost:6379, matching config.py's REDIS_URL default.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Format check (black)
+        run: black --check --line-length 120 .
+
+      # No GROQ_API_KEY/TAVILY_API_KEY secret is configured here on purpose: the live-only suites
+      # (tests/test_eval_routing_live.py, tests/test_full_app_smoke.py, tests/test_agent_graph_integration.py's
+      # live cases) already skip themselves without a real key (see each file's pytest.mark.skipif) — this
+      # runs the full reproducible, network-free suite plus the real local model/FAISS/Redis integration
+      # tests, per docs/TESTING_STRATEGY.md.
+      - name: Test (pytest)
+        env:
+          KMP_DUPLICATE_LIB_OK: "TRUE"
+        run: pytest

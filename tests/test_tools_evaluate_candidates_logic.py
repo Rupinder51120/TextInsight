@@ -87,10 +87,7 @@ class TestEvaluateCandidatesRunsPerModel:
         mock_pipe = MagicMock(return_value=[{"label": "POSITIVE", "score": 0.9}] * 25)
         monkeypatch.setattr(evaluate_candidates_module, "get_pipeline", lambda task, model: mock_pipe)
 
-        docs = [
-            Document(id=str(i), text=f"review {i} here", metadata={"label": "positive"})
-            for i in range(25)
-        ]
+        docs = [Document(id=str(i), text=f"review {i} here", metadata={"label": "positive"}) for i in range(25)]
         ref = register_corpus(docs)
 
         result = evaluate_candidates(
@@ -109,10 +106,7 @@ class TestEvaluateCandidatesRunsPerModel:
         mock_pipe = MagicMock(return_value=[{"label": "POSITIVE", "score": 0.9}] * 5)
         monkeypatch.setattr(evaluate_candidates_module, "get_pipeline", lambda task, model: mock_pipe)
 
-        docs = [
-            Document(id=str(i), text=f"review {i} here", metadata={"label": "positive"})
-            for i in range(30)
-        ]
+        docs = [Document(id=str(i), text=f"review {i} here", metadata={"label": "positive"}) for i in range(30)]
         ref = register_corpus(docs)
 
         result = evaluate_candidates(

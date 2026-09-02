@@ -88,11 +88,15 @@ def generate_candidates(
     candidates = []
     for model_name, is_default in _TASK_CANDIDATES[task_type]:
         if is_default and latency_sensitive:
-            reason = "Default choice: smaller/distilled variant, fast on CPU — matches your latency/compute constraints."
+            reason = (
+                "Default choice: smaller/distilled variant, fast on CPU — matches your latency/compute constraints."
+            )
         elif is_default:
             reason = "Default choice: strong accuracy/latency balance for this task."
         else:
-            reason = "Named alternative some users specifically ask about; larger and typically slower than the default."
+            reason = (
+                "Named alternative some users specifically ask about; larger and typically slower than the default."
+            )
         candidates.append(CandidateModel(model_name=model_name, is_default=is_default, reason=reason))
 
     return candidates

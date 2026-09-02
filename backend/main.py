@@ -41,7 +41,10 @@ def _select_loader(filename: str):
 
 
 def _serialize_tool_results(tool_results: dict) -> dict:
-    return {name: (result.model_dump() if hasattr(result, "model_dump") else result) for name, result in tool_results.items()}
+    return {
+        name: (result.model_dump() if hasattr(result, "model_dump") else result)
+        for name, result in tool_results.items()
+    }
 
 
 @app.post("/upload", response_model=UploadResponse)

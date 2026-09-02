@@ -9,9 +9,15 @@ from tools.profile_dataset import profile_dataset
 class TestProfileDataset:
     def test_csv_corpus_profile(self):
         docs = [
-            Document(id="0", text="Great product, fast shipping.", metadata={"text_column": "review_text", "rating": 5}),
-            Document(id="1", text="Terrible support, broke fast.", metadata={"text_column": "review_text", "rating": 1}),
-            Document(id="2", text="Average, nothing special here.", metadata={"text_column": "review_text", "rating": 3}),
+            Document(
+                id="0", text="Great product, fast shipping.", metadata={"text_column": "review_text", "rating": 5}
+            ),
+            Document(
+                id="1", text="Terrible support, broke fast.", metadata={"text_column": "review_text", "rating": 1}
+            ),
+            Document(
+                id="2", text="Average, nothing special here.", metadata={"text_column": "review_text", "rating": 3}
+            ),
         ]
         ref = register_corpus(docs)
 
@@ -27,7 +33,11 @@ class TestProfileDataset:
 
     def test_label_like_column_detected(self):
         docs = [
-            Document(id=str(i), text=f"Review number {i} with some content.", metadata={"text_column": "text", "rating": i % 3})
+            Document(
+                id=str(i),
+                text=f"Review number {i} with some content.",
+                metadata={"text_column": "text", "rating": i % 3},
+            )
             for i in range(6)
         ]
         ref = register_corpus(docs)
@@ -73,7 +83,11 @@ class TestProfileDataset:
 
     def test_column_hint_switches_text_source(self):
         docs = [
-            Document(id="0", text="the default text column value", metadata={"text_column": "review_text", "title": "Short title"}),
+            Document(
+                id="0",
+                text="the default text column value",
+                metadata={"text_column": "review_text", "title": "Short title"},
+            ),
         ]
         ref = register_corpus(docs)
 

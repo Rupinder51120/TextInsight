@@ -16,7 +16,7 @@ from ingestion.corpus import Corpus, Document, SourceType, make_corpus_ref
 from ingestion.errors import IngestionError
 from ingestion.validation import sniff_and_validate
 
-_SENTENCE_END_CHARS = ('.', '!', '?', '"', "'", ")")
+_SENTENCE_END_CHARS = (".", "!", "?", '"', "'", ")")
 _RECORD_LINE_FRACTION_THRESHOLD = 0.8
 
 

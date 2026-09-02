@@ -19,6 +19,7 @@ st.set_page_config(page_title="TextInsight", layout="wide")
 # Session state
 # ---------------------------------------------------------------------------
 
+
 def _init_state() -> None:
     defaults = {
         "session_id": None,
@@ -34,14 +35,17 @@ def _init_state() -> None:
 
 def _reset_session() -> None:
     for key in ("session_id", "corpus_info", "uploaded_file_key", "chat_history", "first_query_done"):
-        st.session_state[key] = None if key in ("session_id", "corpus_info", "uploaded_file_key") else (
-            [] if key == "chat_history" else False
+        st.session_state[key] = (
+            None
+            if key in ("session_id", "corpus_info", "uploaded_file_key")
+            else ([] if key == "chat_history" else False)
         )
 
 
 # ---------------------------------------------------------------------------
 # Backend calls
 # ---------------------------------------------------------------------------
+
 
 def _upload_file(file) -> dict | None:
     files = {"file": (file.name, file.getvalue(), file.type or "application/octet-stream")}
@@ -53,7 +57,11 @@ def _upload_file(file) -> dict | None:
         return None
 
     if resp.status_code != 200:
-        detail = resp.json().get("detail", resp.text) if resp.headers.get("content-type", "").startswith("application/json") else resp.text
+        detail = (
+            resp.json().get("detail", resp.text)
+            if resp.headers.get("content-type", "").startswith("application/json")
+            else resp.text
+        )
         st.error(f"Upload failed: {detail}")
         return None
 
@@ -72,7 +80,11 @@ def _submit_query(query: str) -> dict | None:
         return None
 
     if resp.status_code != 200:
-        detail = resp.json().get("detail", resp.text) if resp.headers.get("content-type", "").startswith("application/json") else resp.text
+        detail = (
+            resp.json().get("detail", resp.text)
+            if resp.headers.get("content-type", "").startswith("application/json")
+            else resp.text
+        )
         st.error(f"Query failed: {detail}")
         return None
 
@@ -82,6 +94,7 @@ def _submit_query(query: str) -> dict | None:
 # ---------------------------------------------------------------------------
 # Rendering — per-tool result sections (docs/UI_SPEC.md §4)
 # ---------------------------------------------------------------------------
+
 
 def _render_sentiment(result: dict) -> None:
     distribution = result.get("distribution", {})
@@ -109,7 +122,10 @@ def _render_classification(result: dict) -> None:
 def _render_summary(result: dict) -> None:
     st.markdown(f"> {result.get('summary', '')}")
     source_ids = result.get("source_document_ids", [])
-    st.caption(f"Drawn from {len(source_ids)} document(s): {', '.join(source_ids[:10])}" + (" ..." if len(source_ids) > 10 else ""))
+    st.caption(
+        f"Drawn from {len(source_ids)} document(s): {', '.join(source_ids[:10])}"
+        + (" ..." if len(source_ids) > 10 else "")
+    )
     if result.get("chunked"):
         st.caption("Long input was chunked and summarized in multiple passes.")
 
@@ -200,6 +216,7 @@ _RENDERERS = {
 # Rendering — workflow status + latency panels (docs/UI_SPEC.md §1.2, §7)
 # ---------------------------------------------------------------------------
 
+
 def _render_workflow_panel(plan: list[str], tool_results: dict, latency: dict) -> None:
     ran = set(tool_results.keys())
     parts = []
@@ -220,7 +237,9 @@ def _render_latency_panel(latency: dict, is_first_query: bool) -> None:
             return
         total = sum(latency.values())
         st.caption(f"Total: {total:.0f} ms")
-        df = pd.DataFrame({"step": list(latency.keys()), "ms": list(latency.values())}).sort_values("ms", ascending=False)
+        df = pd.DataFrame({"step": list(latency.keys()), "ms": list(latency.values())}).sort_values(
+            "ms", ascending=False
+        )
         st.dataframe(df, use_container_width=True, hide_index=True)
         st.bar_chart(df.set_index("step"))
 
@@ -271,7 +290,9 @@ with st.sidebar:
                 st.session_state.corpus_info = data
                 st.session_state.uploaded_file_key = file_key
                 if is_replacement:
-                    st.info(f"Replaced the active dataset with **{data['source_filename']}**. Prior analysis no longer applies.")
+                    st.info(
+                        f"Replaced the active dataset with **{data['source_filename']}**. Prior analysis no longer applies."
+                    )
 
     if st.session_state.corpus_info:
         info = st.session_state.corpus_info
@@ -291,7 +312,7 @@ with st.sidebar:
         "Candidate labels for classification (optional)",
         key="candidate_labels_hint",
         placeholder="billing, technical, delivery, refund",
-        help="Mention these in your question and the agent will use them, e.g. \"classify into billing/technical/delivery/refund\".",
+        help='Mention these in your question and the agent will use them, e.g. "classify into billing/technical/delivery/refund".',
     )
     st.checkbox(
         "Request external research when asking about model choice",
@@ -316,8 +337,8 @@ else:
             render_response(turn["response"], is_first_query=False)
 
     example_prompts = (
-        "e.g. \"Analyze the sentiment\", \"Why are customers unhappy?\", "
-        "\"Find complaints about delayed delivery\", \"Should I use BERT or DistilBERT?\""
+        'e.g. "Analyze the sentiment", "Why are customers unhappy?", '
+        '"Find complaints about delayed delivery", "Should I use BERT or DistilBERT?"'
     )
     query = st.chat_input(f"Ask a question about your data... ({example_prompts})")
 

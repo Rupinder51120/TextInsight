@@ -33,7 +33,7 @@ class TestCsvLoader:
             load_csv(_read("csv", "empty.csv"), "empty.csv")
 
     def test_malformed_csv_raises(self):
-        malformed = b'a,b,c\n1,2\n3,4,5,6\n'
+        malformed = b"a,b,c\n1,2\n3,4,5,6\n"
         with pytest.raises(IngestionError):
             load_csv(malformed, "malformed.csv")
 

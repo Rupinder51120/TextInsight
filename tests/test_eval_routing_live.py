@@ -29,6 +29,6 @@ def test_live_routing_pass_rate_meets_floor():
 
     print("\n" + format_report(results))
 
-    assert pass_rate >= _ACCEPTABLE_PASS_RATE, (
-        f"live routing pass rate {pass_rate:.0%} fell below the {_ACCEPTABLE_PASS_RATE:.0%} floor"
-    )
+    assert (
+        pass_rate >= _ACCEPTABLE_PASS_RATE
+    ), f"live routing pass rate {pass_rate:.0%} fell below the {_ACCEPTABLE_PASS_RATE:.0%} floor"
