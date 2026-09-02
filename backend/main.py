@@ -5,8 +5,11 @@ validation (Pydantic), invokes the LangGraph agent; no business logic beyond tha
 import time
 
 import structlog
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from agent.graph import run_agent
 from backend.schemas import (
@@ -23,6 +26,14 @@ from observability.metrics import metrics_registry
 from tools.profile_dataset import profile_dataset
 
 app = FastAPI(title="TextInsight API")
+
+# Rate limiting (item 4, 2026-09-02 scope revision): protects this API from being hammered by one client,
+# separate from llm/client.py's Groq-side retry/backoff handling (docs/SECURITY_AND_RELIABILITY.md §6-7),
+# which protects against the *provider's* limits, not ours. In-memory (per-process) limiter — this
+# single-instance deployment's scope doesn't need a shared Redis-backed limiter across replicas.
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 _request_logger = get_logger("request")
 
@@ -130,10 +141,13 @@ async def upload(file: UploadFile = File(...), session_id: str | None = Form(Non
 
 
 @app.post("/query", response_model=QueryResponse)
-async def query(request: QueryRequest):
-    structlog.contextvars.bind_contextvars(session_id=request.session_id)
+@limiter.limit("10/minute")
+async def query(request: Request, payload: QueryRequest):
+    # `request: Request` (Starlette's, not the request body) is required by @limiter.limit, which looks it
+    # up by this exact parameter name — the JSON body is `payload` to avoid the name collision.
+    structlog.contextvars.bind_contextvars(session_id=payload.session_id)
     try:
-        session = session_store.get(request.session_id)
+        session = session_store.get(payload.session_id)
     except SessionNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -141,19 +155,19 @@ async def query(request: QueryRequest):
         raise HTTPException(status_code=400, detail="No file has been uploaded for this session yet.")
 
     result = run_agent(
-        session_id=request.session_id,
+        session_id=payload.session_id,
         corpus_ref=session.corpus_ref,
-        user_query=request.query,
+        user_query=payload.query,
         chat_history=session.chat_history,
         profile=session.profile,
     )
 
     if result.get("profile"):
-        session_store.update_profile(request.session_id, result["profile"])
-    session_store.append_turn(request.session_id, request.query, result.get("final_answer"))
+        session_store.update_profile(payload.session_id, result["profile"])
+    session_store.append_turn(payload.session_id, payload.query, result.get("final_answer"))
 
     return QueryResponse(
-        session_id=request.session_id,
+        session_id=payload.session_id,
         plan=result["plan"],
         tool_results=_serialize_tool_results(result["tool_results"]),
         final_answer=result.get("final_answer"),
