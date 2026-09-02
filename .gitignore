@@ -8,3 +8,4 @@ __pycache__/
 *.index
 uploads/
 sessions/
+dump.rdb

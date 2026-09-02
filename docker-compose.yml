@@ -1,8 +1,24 @@
-# docs/TECH_STACK.md "Deployment: Docker + Docker Compose" — exactly two services (backend + frontend),
-# no database/cache container (per docs/CLAUDE.md §3.5: intentionally none exist in this project's design).
+# docs/TECH_STACK.md "Deployment: Docker + Docker Compose" — backend + frontend + redis (session store).
+# CLAUDE.md §3.5 (revised): Redis was added deliberately for session restart-safety and multi-process
+# readiness — still no separate database container; the FAISS index remains a per-session on-disk file, not
+# something Redis stores.
 # `.env` is read at compose-up time, never baked into either image.
 
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - textinsight
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   backend:
     build:
       context: .
@@ -16,10 +32,17 @@ services:
       - "8080:8000"
     env_file:
       - .env
+    environment:
+      # Overrides .env's localhost default — inside Compose's network the backend reaches Redis by
+      # service name, not localhost.
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       # Named volume for the HF model cache so weights aren't re-downloaded on every container rebuild
       # (docs/TECH_STACK.md).
       - hf-cache:/root/.cache/huggingface
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - textinsight
 
@@ -40,6 +63,7 @@ services:
 
 volumes:
   hf-cache:
+  redis-data:
 
 networks:
   textinsight:

@@ -52,24 +52,36 @@ approach that isn't documented anywhere.
 | Validation | Pydantic (v2) for every tool I/O and every FastAPI request/response | raw dicts, manual validation |
 | Research | Tavily API, wrapped behind one `ResearchClient` interface | scraping search results directly |
 | Tracing | LangSmith, optional — code must run correctly with it fully disabled | — |
-| Deployment | Docker + Docker Compose (backend service + frontend service, two containers only) — added as a
-  Day 5 finishing step, after the app already works via plain `uvicorn`/`streamlit run` | a database
-  container, a Redis/cache container, or any additional service — none exist in this project's design, see
+| Deployment | Docker + Docker Compose (backend, frontend, and redis services — three containers, redis
+  added 2026-09-02 for session persistence, see §3.5 below) — added as a Day 5 finishing step, after the
+  app already works via plain `uvicorn`/`streamlit run` | a relational database container (Postgres/MySQL/
+  SQLite server), a message queue, or any additional service beyond those three — still out of scope, see
   §3.5 below |
 
-## 3.5 No database, no external cache — this is intentional, not a gap
+## 3.5 Session state: Redis (revised 2026-09-02) — still no relational database
 
-This project deliberately has **no database and no Redis/external cache**, confirmed via explicit
-system-design review with the user. Do not add either without being asked:
+**Revision history**: this section originally said "no database, no external cache," confirmed via
+explicit system-design review with the user, as a deliberate scope limit. That decision was explicitly
+revised by the user on 2026-09-02 for restart-safety and multi-process readiness (portfolio maturity) — see
+`docs/TECH_STACK.md`'s "Session State: Redis" section for the full rationale, including why Redis was
+chosen over this section's original SQLite-first fallback. Treat this revision as the current, authoritative
+decision — do not revert to the in-memory `SessionStore` on the theory that the original text here still
+governs.
 
-- **State** lives in-process, in `AgentState` / session-scoped memory, keyed by `session_id`. It does not
-  survive a process restart — that is a documented, accepted limitation (`PROJECT_SPEC.md` §12), not a bug
-  to silently "fix" by introducing SQLite/Postgres.
-- **Caching** that already exists is in-process only: the model registry (loaded pipelines held in memory)
-  and the FAISS index (persisted to a per-session directory on disk). Neither needs Redis — there is only
-  ever one process.
-- If a future task genuinely requires persistence across restarts, the correct default is SQLite (no
-  separate server process) — flag this to the user before adding it; don't default to Postgres/Redis.
+- **Session state** (`backend/session.py`'s `SessionStore`) now lives in Redis, keyed by `session_id`,
+  reached via `REDIS_URL` (`config.py`, default `redis://localhost:6379/0`; `redis://redis:6379/0` inside
+  Docker Compose). `SessionStore`'s public interface is unchanged — this was a storage-backend swap, not a
+  rewrite of callers.
+- **Still no relational database.** Redis here is a key-value session store, not a general-purpose
+  database — no schema, no joins, no ORM. Do not add Postgres/MySQL/SQLite (or an ORM) without being asked;
+  that boundary has not moved.
+- **Caching that is still in-process only, unaffected by this revision**: the model registry (loaded HF
+  pipelines held in memory) and the FAISS index (persisted to a per-session directory on disk,
+  `sessions/faiss/`). Neither moved into Redis — see `docs/TECH_STACK.md` for why (large binary blobs, poor
+  fit for a key-value store, no multi-process access pattern to protect).
+- Do not add a second persistence layer (e.g., Postgres for "real" durability beyond Redis) without being
+  asked — Redis is the complete, intended answer to the restart-safety/multi-process-readiness gap this
+  section used to flag as out of scope.
 
 Default models per task are fixed in `TOOLS_AND_MODELS.md` — do not pick a different default model
 without checking that doc first (e.g. sentiment defaults to

@@ -39,5 +39,8 @@ class Settings(BaseSettings):
     # Agent (docs/ARCHITECTURE.md §3.3)
     max_tool_iterations: int = 6
 
+    # Session state store (docs/TECH_STACK.md — Redis-backed as of CLAUDE.md §3.5's revised decision)
+    redis_url: str = "redis://localhost:6379/0"
+
 
 settings = Settings()

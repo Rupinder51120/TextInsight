@@ -123,6 +123,32 @@ For each technology: role, why chosen, alternatives considered, execution mode, 
   because it minimizes extraction work within the 5-day budget.
 - **Execution**: hosted API, no local compute.
 
+## Session State: Redis
+
+- **Role**: backs `SessionStore` (`backend/session.py`) — session_id → `SessionData` (corpus_ref,
+  source_filename, profile, chat_history). Replaces the original in-process dict.
+- **Why**: two gaps in the in-process dict became worth closing for portfolio maturity: (1) restart-safety
+  — a server restart previously dropped every active session with no recovery; (2) multi-process readiness
+  — a module-level Python dict is only visible inside the single worker process that created it, which
+  blocks running the backend behind more than one Uvicorn worker or replica. Both are exactly the concerns
+  CLAUDE.md §3.5 flagged as the trigger for revisiting the original no-persistence decision.
+- **Why Redis over SQLite** (CLAUDE.md §3.5's stated default for restart-safety alone): SQLite is a single
+  file with file-level locking, which does not give safe concurrent access from multiple worker processes —
+  it solves restart-safety but not multi-process readiness. Redis solves both from one dependency, at the
+  cost of a second running process — an accepted, deliberate tradeoff here (see CLAUDE.md §3.5, revised).
+- **What did NOT change**: the FAISS index remains a per-session file on disk (`sessions/faiss/`), not
+  something moved into Redis — indexes are large binary blobs, a poor fit for a key-value store, and
+  nothing about their access pattern (single-process, per-session build-then-query) needed the restart- or
+  multi-process-safety Redis provides for session metadata. This is *not* "no database" anymore in the
+  strict sense, but it is still not a relational database — no schema, no joins, no query language beyond
+  key lookups by session_id.
+- **Execution**: a single Redis instance — the `redis` service in `docker-compose.yml` locally/in Docker, or
+  any reachable instance via `REDIS_URL` (see `.env.example`). No clustering/replication — out of scope for
+  this project's single-instance deployment target.
+- **Interface**: `SessionStore`'s public methods (`create`/`get`/`exists`/`set_corpus`/`update_profile`/
+  `append_turn`) are unchanged from the in-memory version — this was a storage-backend swap behind the
+  existing abstraction, not a rewrite of any caller (`backend/main.py`).
+
 ## Deployment: Docker + Docker Compose
 - **Role**: containerizes the FastAPI backend and Streamlit frontend as two services, orchestrated via a
   single `docker-compose.yml`, so the whole app runs with one command on any machine without a manual
@@ -133,13 +159,13 @@ For each technology: role, why chosen, alternatives considered, execution mode, 
 - **Structure**:
   - `backend/Dockerfile` — Python base image, installs `requirements.txt`, runs `uvicorn`.
   - `frontend/Dockerfile` — Python base image, installs `requirements.txt`, runs `streamlit run`.
-  - `docker-compose.yml` — defines both services, a shared network so Streamlit can reach FastAPI by
-    service name, environment variables passed through from a root `.env` (never baked into the image),
-    and a named volume for the Hugging Face model cache so models aren't re-downloaded on every container
-    rebuild.
-- **What Docker is NOT used for here**: no database container, no cache/Redis container, no message queue —
-  per the system-design decisions in `PROJECT_SPEC.md`, none of those exist in this project, so compose
-  stays to exactly two services.
+  - `docker-compose.yml` — defines three services (`backend`, `frontend`, `redis`), a shared network so
+    Streamlit can reach FastAPI and FastAPI can reach Redis by service name, environment variables passed
+    through from a root `.env` (never baked into the image), a named volume for the Hugging Face model
+    cache, and a named volume for Redis's own data directory so session state survives a container restart.
+- **What Docker is still NOT used for here**: no relational database container, no message queue — see
+  Session State: Redis above for why a Redis container specifically was added (CLAUDE.md §3.5, revised);
+  everything else in the original system-design decisions in `PROJECT_SPEC.md` still holds.
 - **Alternatives**: running both processes directly with `uvicorn`/`streamlit run` (still fully supported
   and remains the fastest loop for active development — Docker is for demoing/sharing/deploying, not for
   the primary dev inner loop) — see `README_PLAN.md` for both paths documented side by side.
