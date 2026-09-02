@@ -161,24 +161,26 @@ download/load into memory) is reported separately since it materially misreprese
 
 | Step | Cold (first call) | Warm (median, n=3) | Warm range |
 |---|---|---|---|
-| `profile_dataset` | — | 30 ms | 29–248 ms |
-| `sentiment_analysis` (batch of 50) | 3,596 ms | 221 ms | 220–237 ms |
-| `text_classification` (zero-shot, batch of 50) | 6,163 ms | 4,972 ms | 4,972–5,050 ms |
-| `summarize_text` (batch digest, 50 docs) | 3,355 ms | 2,635 ms | 2,568–2,779 ms |
-| `generate_embeddings` (index build, 50 docs) | 3,228 ms | 25 ms | 24–26 ms |
-| `semantic_search` (query only) | — | 26 ms | 16–117 ms |
-| `evaluate_candidates` (2 candidates × 25 labeled examples) | 2,431 ms | 407 ms | 352–423 ms |
+| `profile_dataset` | — | 32 ms | 30–228 ms |
+| `sentiment_analysis` (batch of 50) | 3,314 ms | 219 ms | 219–219 ms |
+| `text_classification` (zero-shot, batch of 50) | 6,764 ms | 4,881 ms | 4,694–4,982 ms |
+| `summarize_text` (batch digest, 50 docs) | 3,391 ms | 2,412 ms | 2,393–2,512 ms |
+| `generate_embeddings` (index build, 50 docs) | 3,140 ms | 24 ms | 23–25 ms |
+| `semantic_search` (query only) | — | 11 ms | 10–104 ms |
+| `evaluate_candidates` (2 candidates × 25 labeled examples) | 1,960 ms | 279 ms | 271–280 ms |
 
 Zero-shot classification is, as flagged in the design docs, the slowest default tool even warm (one forward
 pass per candidate label) — consistent with `docs/LATENCY_AND_PERFORMANCE.md`'s expectation.
 
-**Agent routing accuracy** (`tests/eval_routing.py`, live against Groq, not mocked): **100% (10/10)** across
-three consecutive runs, after a prompt fix mid-build raised it from an initial 80%.
+**Agent routing accuracy** (`tests/eval_routing.py`, live against Groq, not mocked): **100% (10/10)**,
+re-verified live on 2026-09-02.
 
 **Full multi-step diagnostic workflow and full-app smoke test** (all 10 example queries, live through the
-actual FastAPI endpoints): verified live for the diagnostic chain and semantic search workflows during
-development. The complete 10-query full-app smoke test hit Groq's daily token quota near the end of this
-build and could not be fully re-verified live before this README was written — see Limitations.
+actual FastAPI endpoints, plus the two `agent_graph_integration` diagnostic/semantic-search workflow
+tests): all pass live as of 2026-09-02. Running all 10 smoke-test queries back-to-back in one batch trips
+Groq's per-minute token rate limit (`openai/gpt-oss-20b`'s on-demand tier caps at 8,000 TPM) partway
+through; run individually or with a short pause between queries and every query completes cleanly with
+`error: null`.
 
 ## Limitations
 
@@ -197,8 +199,9 @@ build and could not be fully re-verified live before this README was written —
   design choice, not a gap; see `CLAUDE.md` §3.5).
 - English-first models by default; other-language support is not validated.
 - Scanned/image PDFs (no extractable text) are not supported — no OCR.
-- The full 10-query full-app smoke test could not be completely re-verified live in one sitting due to a
-  third-party API daily rate limit encountered near the end of this build (see Latency Benchmarks above).
+- Running the full 10-query smoke test as one rapid batch can trip Groq's per-minute (not daily) token
+  rate limit on the free/on-demand tier; each query completes cleanly with `error: null` when run
+  individually or spaced out (see Latency Benchmarks above).
 
 ## Future Work
 
