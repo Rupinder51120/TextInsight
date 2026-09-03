@@ -223,3 +223,96 @@ Per-request server-side durations for run 4's 10 successes (from the structured 
 - This was one run, not a statistical sample. The crash in runs 2 and 3 was itself reproduced twice in a
   row before the warm-up fix, which is why a single clean run after the fix is reasonably convincing; it
   is not proof the race can never recur under different timing.
+
+## Update 2026-09-03: the warm-up had a real gap — non-default candidate models weren't covered
+
+**What was missed.** The 2026-09-02 warm-up (`_warm_up_all_models`) only loaded the 4 *default* models
+(sentiment, zero-shot classification, summarization, embeddings). `tools/evaluate_candidates.py` calls
+`models.registry.get_pipeline("sentiment-analysis", model_name)` for whichever candidate
+`model_recommendation.generate_candidates()` returns — which is not always the default. For the sentiment
+task specifically, that shortlist is `distilbert-base-uncased-finetuned-sst-2-english` (default, already
+warmed) and `cardiffnlp/twitter-roberta-base-sentiment-latest` (not warmed). A first-time load of that
+second model, triggered by two concurrent model-recommendation requests, could still hit the exact
+`transformers` lazy-import race the warm-up was built to eliminate — this was never actually tested in the
+2026-09-02 runs (all three used `sentiment_analysis`/`summarize_text`/`semantic_search` queries, never a
+model-recommendation query), so this gap shipped undetected.
+
+**Fix.** `tools/model_recommendation.py` now exposes `all_candidate_model_names()` — every model name
+across every task type in `_TASK_CANDIDATES`, not just the one task type (`"sentiment"`) the agent
+currently hardcodes for `evaluate_candidates`. `backend/main.py`'s warm-up now loads every one of these via
+`get_pipeline("sentiment-analysis", model_name)`, matching `evaluate_candidates`' actual call exactly, each
+independently try/excepted so one failure can't take down startup.
+
+**Startup time, measured, not estimated — three numbers, not one, because "cold cache" and "warm cache"
+are genuinely different costs:**
+
+| | Startup time |
+|---|---|
+| No warm-up (original baseline) | 0.77 s |
+| 4-default-model warm-up (2026-09-02 fix) | 7.20 s |
+| **All 10 candidate-shortlist models, warm HF cache** (steady-state — matches Docker's persistent `hf-cache` volume, which is not re-downloaded on every restart) | **18.75 s** |
+| All 10 candidate-shortlist models, **cold HF cache** (this machine's very first download of the 6 newly-added models) | **2,898 s (~48.3 min)** |
+
+The cold-cache number is real and was actually measured — not invented, not estimated — but it is a
+one-time cost dominated by this sandbox's slow network for the two ~1.6 GB `facebook/bart-large-*` models,
+not a property of the code. It is reported here for completeness, not as the number that matters
+operationally: `docker-compose.yml`'s `hf-cache` named volume exists specifically so this cost is paid
+once per machine, not once per restart. The **18.75 s warm-cache number is the one that recurs** on every
+subsequent process start, and it is the fair comparison against the 7.20 s figure for the narrower,
+2026-09-02 fix.
+
+**Zero of the 10 warm-up attempts raised an exception** — but that is not the same as "all 10 models are
+usable through `evaluate_candidates`." The startup log shows 4 of the 6 newly-warmed models
+(`facebook/bart-large-cnn`, `sentence-transformers/all-MiniLM-L6-v2`,
+`sentence-transformers/all-mpnet-base-v2`, `sshleifer/distilbart-cnn-12-6`) loaded with transformers'
+warning that their classification head weights are **randomly initialized, not from the checkpoint**
+("You should probably TRAIN this model... to be able to use it for predictions"). These models were never
+designed for the `sentiment-analysis` pipeline task `evaluate_candidates` forces them through — loading
+them doesn't crash, but if `evaluate_candidates` were ever actually called with one of them (not possible
+today, since `agent/nodes.py`'s `_MODEL_RECOMMENDATION_TASK_TYPE` hardcodes `"sentiment"`, so only the
+2-model sentiment shortlist is reachable), its predictions would be near-random garbage from an untrained
+head, not a clean error. This is the same pre-existing, already-documented limitation
+(`evaluate_candidates` "only meaningful for sentiment-style labeled datasets today," per README) — not
+introduced or fixed by this warm-up, and not claimed to be.
+
+**Load test targeting `evaluate_candidates` with the actually-reachable non-default model, run for the
+first time (`scripts/load_test.py --n 15 --query "Should I use BERT or DistilBERT?" --fixture
+labeled_sentiment.csv`), unedited output:**
+
+```
+Uploaded fixture corpus (labeled_sentiment.csv), session_id=daf2efae88754ba1b426d7152d5773c7
+Firing 15 concurrent POST /query requests (query='Should I use BERT or DistilBERT?')...
+
+Wall time for all 15 requests: 10895 ms
+Successes (200, body error=null): 8
+Degraded (200, body error set — agent caught an internal failure): 2
+  duration_ms=3814 error=I couldn't process that request right now (Groq call failed: Error code: 429 ...)
+  duration_ms=4612 error=I couldn't process that request right now (Groq call failed: Error code: 429 ...)
+Rate-limited (429): 5
+Other failures: 0
+
+Successful request latency: median=8134 ms, min=7839 ms, max=10894 ms
+```
+
+Both "degraded" results are Groq's own per-minute token limit (a pre-existing, separate, already-documented
+factor — see the original run's writeup above) — not a crash, not an `AutoConfig`/`'module' object is not
+callable` error, not a server disconnect. **The server was still listening and healthy after this run.**
+
+**Direct evidence the specific race is closed, not just "no crash observed":** the structured `tool_execution`
+log shows exactly two `evaluate_candidates` calls in this run — LLM routing is non-deterministic, so not
+every one of the 8 successful requests included `evaluate_candidates` in its plan, and this is the extent of
+the concurrent sample this run produced — firing 6ms apart (`18:29:32.707508Z` and `18:29:32.713599Z`) with
+overlapping ~2.2–2.4s execution windows, both against `cardiffnlp/twitter-roberta-base-sentiment-latest`,
+both succeeding cleanly. That is genuinely concurrent execution against the specific model this whole
+update exists to cover, not an inference from a differently-shaped test.
+
+**Honest scope of what's now verified vs. still assumed:**
+- **Verified**: the default-model race (original bug) — closed, multiple runs. The
+  `evaluate_candidates`/non-default-sentiment-model race — closed, one run, two genuinely-concurrent samples.
+- **Not verified, and not claimed**: the classification/NER/summarization/embedding candidate models'
+  race — these are warmed (no startup exception), but there is no code path today that reaches them through
+  `evaluate_candidates` (the hardcoded task type), so there was nothing to load-test, and the warm-up's
+  value for them today is purely defensive should that hardcoding ever change.
+- **Not fixed**: the separate, pre-existing bug where several of those same models would return
+  near-random predictions if `evaluate_candidates` were ever pointed at them — out of scope for this task,
+  documented above, not touched.

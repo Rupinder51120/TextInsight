@@ -8,6 +8,12 @@ the app at all). Uploads one real fixture corpus, then fires N concurrent POST /
 and reports per-request status/latency plus aggregate stats.
 
 Run: KMP_DUPLICATE_LIB_OK=TRUE python scripts/load_test.py [--base-url http://localhost:8000] [--n 15]
+      [--query "..."] [--fixture reviews.csv]
+
+--query targets a single query at every concurrent request instead of round-robining the default 3 —
+used to target a specific tool/path deliberately, e.g. "Should I use BERT or DistilBERT?" (routes through
+evaluate_candidates with a non-default candidate model, per docs/MODEL_RECOMMENDATION.md — see
+LOAD_TEST_RESULTS.md's evaluate_candidates warm-up verification run).
 """
 
 import argparse
@@ -18,7 +24,7 @@ from pathlib import Path
 
 import httpx
 
-FIXTURES = Path(__file__).parent.parent / "tests" / "fixtures" / "csv" / "reviews.csv"
+FIXTURES_DIR = Path(__file__).parent.parent / "tests" / "fixtures" / "csv"
 
 _QUERIES = [
     "Analyze the sentiment",
@@ -27,9 +33,10 @@ _QUERIES = [
 ]
 
 
-def _upload_session(base_url: str) -> str:
+def _upload_session(base_url: str, fixture_filename: str) -> str:
+    content = (FIXTURES_DIR / fixture_filename).read_bytes()
     with httpx.Client(timeout=30) as client:
-        resp = client.post(f"{base_url}/upload", files={"file": ("reviews.csv", FIXTURES.read_bytes(), "text/csv")})
+        resp = client.post(f"{base_url}/upload", files={"file": (fixture_filename, content, "text/csv")})
         resp.raise_for_status()
         return resp.json()["session_id"]
 
@@ -56,17 +63,24 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument("--n", type=int, default=15)
+    parser.add_argument(
+        "--query", default=None, help="fire this single query for every request, instead of round-robin"
+    )
+    parser.add_argument("--fixture", default="reviews.csv", help="fixture CSV filename under tests/fixtures/csv/")
     args = parser.parse_args()
 
-    session_id = _upload_session(args.base_url)
-    print(f"Uploaded fixture corpus, session_id={session_id}")
+    session_id = _upload_session(args.base_url, args.fixture)
+    print(f"Uploaded fixture corpus ({args.fixture}), session_id={session_id}")
 
-    print(f"Firing {args.n} concurrent POST /query requests...")
+    queries = [args.query] if args.query else _QUERIES
+    print(
+        f"Firing {args.n} concurrent POST /query requests (query={args.query!r})..."
+        if args.query
+        else f"Firing {args.n} concurrent POST /query requests..."
+    )
     start = time.perf_counter()
     with ThreadPoolExecutor(max_workers=args.n) as pool:
-        futures = [
-            pool.submit(_one_query, args.base_url, session_id, _QUERIES[i % len(_QUERIES)]) for i in range(args.n)
-        ]
+        futures = [pool.submit(_one_query, args.base_url, session_id, queries[i % len(queries)]) for i in range(args.n)]
         results = [f.result() for f in as_completed(futures)]
     wall_ms = (time.perf_counter() - start) * 1000
 

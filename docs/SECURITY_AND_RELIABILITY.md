@@ -108,21 +108,46 @@
   end-to-end from `research_models`'s output schema through to the Streamlit evidence cards
   (`UI_SPEC.md` §6).
 
-## 13. Known Limitation: Session State Race Under Concurrent Requests
+## 13. Known Limitations & Fixes Under Concurrent Requests
 
-- `backend/main.py`'s `/query` handler offloads agent execution to a thread pool
-  (`fastapi.concurrency.run_in_threadpool`, added 2026-09-02 — see `LOAD_TEST_RESULTS.md`) so that
-  concurrent requests genuinely run in parallel rather than queuing behind one another. This makes a
-  pre-existing risk in `backend/session.py`'s `SessionStore` newly reachable, though it has not been
-  observed or demonstrated failing.
+`backend/main.py`'s `/query` handler offloads agent execution to a thread pool
+(`fastapi.concurrency.run_in_threadpool`, added 2026-09-02 — see `LOAD_TEST_RESULTS.md`) so that concurrent
+requests genuinely run in parallel rather than queuing behind one another. That surfaced two independent,
+pre-existing risks that real concurrency was never reachable enough to trigger before — one now fixed with
+verified evidence, one identified and left open.
+
+### 13.1 Session State Race — identified, not fixed
+
 - `SessionStore.update_profile` and `SessionStore.append_turn` are a plain read-modify-write against Redis
   (`get` → mutate the in-memory `SessionData` → `set`), not an atomic transaction (no `WATCH`/`MULTI`, no
   optimistic locking). If two requests for the *same* `session_id` are in flight at the same time — e.g.
   two browser tabs on the same session, or a retried request racing the original — the second `set` can
   overwrite the first, silently dropping a `chat_history` entry or a profile update rather than merging
   both.
-- **Identified, not fixed.** This is documented here as an honestly-acknowledged gap, per the same standard
-  used throughout this project (see `LOAD_TEST_RESULTS.md`'s own caveats section, where this was first
-  noted) — not something a workaround was attempted for. A real fix would need either a Redis transaction
-  (`WATCH`/`MULTI`/`EXEC`) around each read-modify-write, or moving `chat_history` to a Redis list
-  (`RPUSH`, naturally append-only and race-free) instead of a field inside one JSON blob.
+- Documented here as an honestly-acknowledged gap, per the same standard used throughout this project (see
+  `LOAD_TEST_RESULTS.md`'s own caveats section, where this was first noted) — not something a workaround
+  was attempted for. A real fix would need either a Redis transaction (`WATCH`/`MULTI`/`EXEC`) around each
+  read-modify-write, or moving `chat_history` to a Redis list (`RPUSH`, naturally append-only and
+  race-free) instead of a field inside one JSON blob.
+
+### 13.2 Concurrent First-Time Model Loading — fixed for the tested path, not for every path
+
+- `models/registry.py`'s and `models/faiss_index.py`'s lazy model caches were not safe against concurrent
+  first-time construction: `transformers`' own internal lazy-import state can be corrupted when two threads
+  both try to load a model for the first time at once, which crashed the process outright under load
+  (`LOAD_TEST_RESULTS.md`, runs 2–3). Fixed by eagerly loading every default model, plus every model named
+  anywhere in `model_recommendation.py`'s candidate shortlists, once at process startup
+  (`backend/main.py`'s `_warm_up_all_models`) — see `LOAD_TEST_RESULTS.md`'s 2026-09-03 update for the
+  full startup-cost numbers and verification detail.
+- **What's verified with a passing concurrent load test**: the 4 default models, and
+  `cardiffnlp/twitter-roberta-base-sentiment-latest` (the one non-default candidate model reachable today
+  through `evaluate_candidates`, since `agent/nodes.py` currently hardcodes the sentiment task type).
+- **What's warmed but not exercised by any test**: the other 8 model names in `model_recommendation.py`'s
+  classification/NER/summarization/embeddings shortlists. No code path reaches them through
+  `evaluate_candidates` today (the hardcoded task type), so there is nothing to concurrency-test yet;
+  warming them is defensive, in case that hardcoding changes later. Several of them, notably
+  `facebook/bart-large-cnn` and both `sentence-transformers/*` embedding models, load with a **randomly-
+  initialized classification head** when forced through the `sentiment-analysis` pipeline task
+  `evaluate_candidates` always uses — a separate, pre-existing limitation (README's "only meaningful for
+  sentiment-style labeled datasets today" note on `evaluate_candidates`), unrelated to and not fixed by
+  this warm-up.

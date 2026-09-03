@@ -24,29 +24,50 @@ from backend.schemas import (
 from backend.session import SessionNotFoundError, session_store
 from ingestion import IngestionError, corpus_store, load_csv, load_pdf, load_txt
 from models.faiss_index import warm_up_embedding_model
-from models.registry import get_sentiment_pipeline, get_summarization_pipeline, get_zero_shot_pipeline
+from models.registry import get_pipeline, get_sentiment_pipeline, get_summarization_pipeline, get_zero_shot_pipeline
 from observability.logging import get_logger
 from observability.metrics import metrics_registry
+from tools.model_recommendation import all_candidate_model_names
 from tools.profile_dataset import profile_dataset
 
 _startup_logger = get_logger("startup")
 
 
 def _warm_up_all_models() -> None:
-    """Eagerly load every default model once at process startup, per
-    docs/LATENCY_AND_PERFORMANCE.md §4's originally-intended "loaded once at process startup" option --
-    only the lazy "on first use" half was ever built until now. This is the actual fix for the concurrent-
-    first-load race documented in LOAD_TEST_RESULTS.md: locking each cache individually (models/registry.py,
-    models/faiss_index.py) was not enough, because the race was in transformers' own shared internal
-    lazy-import state, not in either cache. Loading everything before the server accepts any traffic means
-    no two requests can ever both be first to load the same model, because nothing is ever first at
-    request time -- eliminating the race entirely rather than narrowing it.
+    """Eagerly load every default model, AND every model_recommendation candidate-shortlist model, once at
+    process startup, per docs/LATENCY_AND_PERFORMANCE.md §4's originally-intended "loaded once at process
+    startup" option -- only the lazy "on first use" half was ever built until now. This is the actual fix
+    for the concurrent-first-load race documented in LOAD_TEST_RESULTS.md: locking each cache individually
+    (models/registry.py, models/faiss_index.py) was not enough, because the race was in transformers' own
+    shared internal lazy-import state, not in either cache. Loading everything before the server accepts
+    any traffic means no two requests can ever both be first to load the same model, because nothing is
+    ever first at request time -- eliminating the race entirely rather than narrowing it.
+
+    The first warm-up pass (2026-09-02) only covered the 4 default models and missed a second reachable
+    path: tools/evaluate_candidates.py calls models.registry.get_pipeline("sentiment-analysis", model_name)
+    for whichever candidate model_recommendation.generate_candidates() returns -- which is NOT always the
+    default -- so a first-time load of a non-default candidate (e.g. the sentiment alternative,
+    cardiffnlp/twitter-roberta-base-sentiment-latest) could still race, reintroducing the exact bug this
+    warm-up exists to eliminate. Every model in all_candidate_model_names() is now warmed the same way
+    evaluate_candidates actually calls it (task="sentiment-analysis"), regardless of what task the model
+    was actually designed for -- some of these (NER/summarization/embedding checkpoints forced through a
+    sentiment-analysis pipeline) are architecturally incompatible and WILL fail to load; that is a
+    pre-existing, separate bug in evaluate_candidates (docs README's "only meaningful for sentiment-style
+    datasets today" limitation), not something warm-up introduces or should mask. Each model is warmed
+    independently so one failure doesn't take down startup or block warming the rest.
     """
     start = time.perf_counter()
     get_sentiment_pipeline()
     get_zero_shot_pipeline()
     get_summarization_pipeline()
     warm_up_embedding_model()
+
+    for model_name in all_candidate_model_names():
+        try:
+            get_pipeline("sentiment-analysis", model_name)
+        except Exception as exc:  # noqa: BLE001 — a warm-up failure must not take the whole app down
+            _startup_logger.error("model_warmup_candidate_failed", model=model_name, error=str(exc))
+
     duration_ms = (time.perf_counter() - start) * 1000
     _startup_logger.info("model_warmup", duration_ms=round(duration_ms, 2))
 

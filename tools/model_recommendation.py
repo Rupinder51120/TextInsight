@@ -66,6 +66,20 @@ _LARGE_DATASET_THRESHOLD = 500
 _FINE_TUNE_DISCLAIMER = "This system does not perform training or fine-tuning; this is guidance only."
 
 
+def all_candidate_model_names() -> list[str]:
+    """Every model name appearing anywhere in _TASK_CANDIDATES, across every task type — not just the
+    task type the agent currently hardcodes for evaluate_candidates (agent/nodes.py's
+    _MODEL_RECOMMENDATION_TASK_TYPE == "sentiment"). Used by backend/main.py's startup warm-up: any of
+    these names can reach models.registry.get_pipeline("sentiment-analysis", model_name) via
+    evaluate_candidates (docs/MODEL_RECOMMENDATION.md §6.5 — evaluate_candidates always uses the
+    sentiment-analysis pipeline regardless of the candidate's actual task, a separate, pre-existing,
+    documented limitation, not something this function papers over), so all of them are warm-up
+    candidates for the same concurrent-first-load race described in LOAD_TEST_RESULTS.md, not just the
+    two reachable through today's hardcoded task type."""
+    names = {model_name for candidates in _TASK_CANDIDATES.values() for model_name, _ in candidates}
+    return sorted(names)
+
+
 def generate_candidates(
     task_type: str,
     user_constraints: UserConstraints | None = None,
